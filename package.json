@@ -1,0 +1,36 @@
+{
+  "name": "ecowave-pdf-extractor",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "db:push": "prisma db push",
+    "db:studio": "prisma studio",
+    "postinstall": "prisma generate"
+  },
+  "dependencies": {
+    "@google/genai": "^2.12.0",
+    "@prisma/client": "^6.16.0",
+    "@supabase/ssr": "^0.12.4",
+    "@supabase/supabase-js": "^2.112.0",
+    "next": "^15.5.0",
+    "pdf-lib": "^1.17.1",
+    "pdfjs-dist": "^6.2.108",
+    "puppeteer": "^25.4.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "resend": "^6.18.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
+    "prisma": "^6.16.0",
+    "typescript": "^5.7.0"
+  },
+  "allowScripts": {
+    "puppeteer@25.4.0": true
+  }
+}

@@ -1,0 +1,29 @@
+# dependencies
+/node_modules
+
+# next.js
+/.next
+/out
+
+# production
+/build
+
+# env — never commit secrets
+.env
+.env.local
+.env*.local
+
+# extracted text dumps
+/extractions
+
+# submitted voice recordings (local disk storage — see app/api/record/[token])
+/recordings
+
+# database (SQLite)
+/prisma/*.db
+/prisma/*.db-journal
+
+# misc
+*.log
+.DS_Store
+next-env.d.ts

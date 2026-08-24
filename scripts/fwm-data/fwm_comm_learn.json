@@ -1,0 +1,82 @@
+[
+  {
+    "base": "VISUAL + Outward + Extrovert",
+    "communicationStyle": "Uses gestures and visual aids, speaks quickly and energetically.",
+    "learningStyle": "Learns best through group discussions with charts and visual presentations."
+  },
+  {
+    "base": "VISUAL + Outward + Introvert",
+    "communicationStyle": "Prefers written communication or visual summaries, clear when expressing externally.",
+    "learningStyle": "Needs visual materials to study independently, benefits from observing demonstrations."
+  },
+  {
+    "base": "VISUAL + Inward + Extrovert",
+    "communicationStyle": "Enthusiastically shares internal visions and ideas, painting a picture with words.",
+    "learningStyle": "Learns by creating mind maps and discussing internal visualizations with others."
+  },
+  {
+    "base": "VISUAL + Inward + Introvert",
+    "communicationStyle": "Quietly processes visual information internally, speaks when they have a clear picture.",
+    "learningStyle": "Highly independent learner relying on reading, observing, and internal visualization."
+  },
+  {
+    "base": "FEELING + Outward + Extrovert",
+    "communicationStyle": "Highly expressive, uses touch and emotional language, connects easily with others.",
+    "learningStyle": "Learns best through hands-on group activities and emotional engagement with the topic."
+  },
+  {
+    "base": "FEELING + Outward + Introvert",
+    "communicationStyle": "Empathetic and observant, expresses feelings carefully but clearly to trusted individuals.",
+    "learningStyle": "Prefers hands-on practice in a quiet environment, needs to physically experience it."
+  },
+  {
+    "base": "FEELING + Inward + Extrovert",
+    "communicationStyle": "Passionately shares personal feelings and values, seeks emotional validation from others.",
+    "learningStyle": "Learns through discussing personal experiences and connecting material to their feelings."
+  },
+  {
+    "base": "FEELING + Inward + Introvert",
+    "communicationStyle": "Very private with emotions, communicates deeply but rarely, relying on internal feelings.",
+    "learningStyle": "Learns best through independent reflection on how the material makes them feel."
+  },
+  {
+    "base": "THINKING + Outward + Extrovert",
+    "communicationStyle": "Articulates logical arguments clearly and persuasively, enjoys debating ideas.",
+    "learningStyle": "Learns through structured group problem-solving and analyzing external data together."
+  },
+  {
+    "base": "THINKING + Outward + Introvert",
+    "communicationStyle": "Concise and logical, prefers written reports or direct factual statements over chat.",
+    "learningStyle": "Needs to independently analyze external facts, figures, and logical frameworks."
+  },
+  {
+    "base": "THINKING + Inward + Extrovert",
+    "communicationStyle": "Enthusiastically explains their complex internal theories and logical deductions.",
+    "learningStyle": "Learns by discussing and testing internal logical models against others perspectives."
+  },
+  {
+    "base": "THINKING + Inward + Introvert",
+    "communicationStyle": "Very reserved, only shares thoughts after rigorous internal analysis and structuring.",
+    "learningStyle": "Highly independent learner, focuses on deep, quiet analysis of concepts and logic."
+  },
+  {
+    "base": "HEARING + Outward + Extrovert",
+    "communicationStyle": "Talkative, loves discussions, uses varied vocal tones, and thinks out loud.",
+    "learningStyle": "Learns best through lectures, group discussions, and auditory repetition with others."
+  },
+  {
+    "base": "HEARING + Outward + Introvert",
+    "communicationStyle": "Listens intently to others, speaks thoughtfully, prefers one-on-one conversations.",
+    "learningStyle": "Learns through listening to lectures or audiobooks independently, absorbing sounds."
+  },
+  {
+    "base": "HEARING + Inward + Extrovert",
+    "communicationStyle": "Verbally processes their internal dialogue, often talking through thought processes aloud.",
+    "learningStyle": "Learns by explaining concepts to others and hearing themselves talk through material."
+  },
+  {
+    "base": "HEARING + Inward + Introvert",
+    "communicationStyle": "Relies heavily on internal dialogue, speaks carefully after silently rehearsing.",
+    "learningStyle": "Learns best in quiet environments where they can internally narrate and process."
+  }
+]

@@ -1,0 +1,25 @@
+# Rebuilt inside the image — copying the host's copies would overwrite the
+# Linux binaries (Prisma engines, Puppeteer's Chrome) with Windows ones.
+node_modules
+.next
+tsconfig.tsbuildinfo
+
+# Secrets never enter the image. DigitalOcean injects them as env vars.
+.env
+.env.local
+.env*.local
+
+# Runtime debug dumps, not source.
+extractions
+recordings
+
+# Local-only working files.
+.git
+.claude
+drive-download-20260817T025247Z-1-001
+scripts/node-out
+*.log
+
+# NOTE: public/ is deliberately NOT ignored — lib/renderOverviewSvg.ts reads
+# public/report-templates/emowave-overview.svg from disk at runtime to build
+# the one-page overview report.

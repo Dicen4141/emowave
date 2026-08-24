@@ -1,0 +1,403 @@
+========================================================================
+EMOWAVE - HOW IT WORKS, STEP BY STEP
+========================================================================
+
+WHAT THE SYSTEM DOES
+--------------------
+EmoWave is one internal admin tool. There is no public website.
+next.config.mjs sends "/" straight to "/admin", and middleware.ts locks
+every page and every API route behind a signed-in Supabase account that
+has an admin or superadmin role.
+
+The job it does, start to finish:
+
+  A customer buys a report on Quantemo
+    -> staff upload that person's raw vendor PDFs
+    -> the app pulls the data out of them
+    -> the app renders a finished report
+    -> the report is delivered into the customer's Quantemo account
+
+
+========================================================================
+FIRST: THE TWO DATABASES
+========================================================================
+
+Nothing else makes sense without this. There are TWO separate Supabase
+projects, and the app talks to both.
+
+  1. QUANTEMO'S PROJECT
+     Holds: customers (users), family profiles, orders, products, and
+            the reports the customer sees in their account.
+     Reached by: Supabase JS client using the service-role key.
+     Code: lib/quantemo.ts, lib/quantemoOrders.ts
+
+  2. EMOWAVE'S PROJECT
+     Holds: clients, assessments, report_facts, generated content, and
+            the vendor reference tables.
+     Reached by: Prisma (DATABASE_URL).
+     Code: prisma/schema.prisma
+
+EmoWave deliberately does NOT copy customer names, emails or ages into
+its own database. It reads them live from Quantemo. That is why an
+assessment stores only a snapshot (ageAtAssessment, subjectName) taken
+at generation time - a report that said "age 42" must still say 42 when
+it is reopened next year.
+
+One more thing: Quantemo's Supabase Auth is the SAME project used to
+sign staff in. An admin account is just a Quantemo account with
+role: admin set in app_metadata. That can only be written server-side
+with the service-role key - see scripts/create-admin.mjs. Nobody can
+grant themselves admin.
+
+
+========================================================================
+STEP 1 - A CUSTOMER PLACES AN ORDER ON QUANTEMO
+========================================================================
+
+The customer buys an EmoWave product in Quantemo's own storefront.
+EmoWave plays no part in this. A row simply appears in Quantemo's
+orders table.
+
+Each order carries:
+  - buyer_id           who paid
+  - subject_profile_id who the report is FOR (only set when the buyer
+                       named a family member at checkout)
+
+
+========================================================================
+STEP 2 - THE ORDER BECOMES A ROUND IN EMOWAVE
+========================================================================
+
+Code: processQuantemoOrder() in lib/quantemoOrders.ts, line 114.
+This is the single entry point. It runs three checks, in this order:
+
+  CHECK 1 - Is it paid?
+    Anything whose status is not "paid" is skipped. Orders are usually
+    created pending and updated to paid later, which is why both events
+    have to be watched.
+
+  CHECK 2 - Is it ours?
+    The product's collection must be "EmoWave". The product's sku then
+    decides WHICH report was bought.
+
+  CHECK 3 - Have we seen it already?
+    Looked up by quantemoOrderId. The same order is never recorded
+    twice. But a DIFFERENT order for the same person is a genuine second
+    purchase and is kept.
+
+Then it works out WHO the round is about:
+
+  - If the order has a subject_profile_id, the person is looked up in
+    Quantemo's family profiles and matched to a Client by
+    subjectProfileId. This is exact, and stays stable no matter how the
+    buyer retypes the name next time.
+
+  - If it does not, it falls back to the buyer's own Client, narrowed to
+    subjectProfileId = null. That narrowing matters: without it a
+    self-purchase could attach itself to a family member's record
+    sitting under the same account.
+
+The result is:
+
+  CLIENT     = one PERSON
+  ASSESSMENT = one ROUND (one purchase)
+
+A client who buys again gets a NEW assessment rather than overwriting
+the old one. That is what keeps past reports reissuable.
+
+TWO WAYS THIS GETS TRIGGERED
+----------------------------
+
+  A) WEBHOOK - app/api/webhooks/quantemo-order
+     Runs automatically, the moment the order is paid.
+     Needs EmoWave deployed at a public URL that Quantemo's Supabase
+     servers can reach. Authenticated by the x-webhook-secret header,
+     because there is no EmoWave admin session on a server-to-server
+     call.
+
+  B) MANUAL - the "+ Add to Workspace" button on /admin/clients
+     Runs when staff click it.
+     Needs nothing special. It works from localhost, because this is
+     EmoWave reaching OUT to Quantemo rather than the other way round.
+
+Both call the exact same function, so there is one tested path, not
+two.
+
+There is also scripts/poll-quantemo-orders.mjs, which runs the manual
+path on a 1-minute timer. That is the stand-in for the webhook until
+the app is deployed.
+
+
+========================================================================
+STEP 3 - STAFF UPLOAD THE RAW VENDOR PDFS
+========================================================================
+
+Where: the Workspace at /admin/workspace, or the standalone Extract
+page at /admin/extract, which does the same thing.
+
+The vendor sends three PDFs per person. The app auto-detects which is
+which by reading page 1 (lib/extractTemplateFacts.ts, line 831):
+
+  - iEmoWave Full
+  - Aquera Mind Report
+  - Emotional Notes
+
+Several files can be uploaded in one batch.
+
+A real problem this handles: the same person's name is often spelled
+differently across the three report types. A confirmed case is
+"Nassirdeen Yahaya" on one report and "Nassirdeen Yahaya Kwande" on
+another. Exact-string matching alone forks that person into two
+clients every time.
+
+So namesLikelySamePerson() does a WORD-BY-WORD prefix match. Every word
+of the shorter name must match the longer one's words in order from the
+start. That treats those two spellings as one person, while still
+telling apart two genuinely different people who happen to share a
+first name - "John Smith" is not a word-match for "John Smithson".
+
+It is deliberately used ONLY for the "is this upload for the client I
+already have open" check. A general fuzzy search across every client in
+the system would risk merging two different people who share a common
+name.
+
+
+========================================================================
+STEP 4 - EXTRACTION TURNS A PDF INTO FACTS
+========================================================================
+
+Route: POST /api/extract-facts
+Code:  extractTemplateFacts(), which reads the PDF with pdfjs-dist.
+
+Three different techniques are used, depending on what the vendor did
+with that part of the page:
+
+  1. SELECTABLE TEXT
+     Read straight out of the PDF.
+
+  2. POSITION-BASED EXTRACTION
+     Used for the fixed-layout iEmoWave Full template. Values are read
+     by WHERE THEY SIT on the page, not by matching a label next to
+     them.
+
+  3. GEMINI VISION
+     The Emotional Notes "Note Balance" chart has its numbers baked
+     into image pixels, with no selectable text at all. There is no OCR
+     library in this project, so the image is decoded, re-encoded as a
+     PNG (using zlib only - no canvas dependency) and sent to Gemini to
+     read out.
+
+Some fields are also paraphrased by Gemini (lib/paraphrase.ts) rather
+than copied word for word.
+
+What comes out: a set of ReportFact rows attached to the assessment,
+each with a section, label, value and sourceReport.
+
+A plain-text dump of every extraction is also written to /extractions
+so a bad result can be inspected afterwards.
+
+Circled answers are handled separately by /api/extract-circles
+(lib/extractCircled.ts), because some vendor pages record the answer as
+a hand-drawn circle rather than as text.
+
+
+========================================================================
+STEP 5 - STAFF REVIEW AND CORRECT THE FACTS
+========================================================================
+
+Where: /admin/facts
+
+This lists what was extracted and lets staff edit it. Every fact
+records whether it was read from the document or produced by a model
+call, so a wrong value can be traced back to which of the two put it
+there.
+
+lib/reportGapCheck.ts flags what is missing BEFORE it becomes a hole in
+the finished report. For example:
+
+  "Behaviour Pattern: no Note 1/Note 2 - wheel and note scale won't be
+   marked for this client."
+
+
+========================================================================
+STEP 6 - GENERATING A REPORT
+========================================================================
+
+Route: GET /api/generate-report?assessmentId=...&variant=...&theme=...
+
+There are three variants, each with its own renderer:
+
+  VARIANT: full
+    Renderer: lib/renderEwFullReport.ts
+    The multi-page iEmoWave report.
+    Takes a theme: "career" or "relationship".
+
+  VARIANT: overview
+    Renderer: lib/renderOverviewSvg.ts
+    One page. Fills the vendor's own SVG template
+    (public/report-templates/emowave-overview.svg) with this client's
+    values.
+
+  VARIANT: fwm
+    Renderer: lib/renderFwmReport.ts
+    Financial Wealth Management. A separate report TYPE with its own
+    vendor reference tables, not a view of the full report. Ignores
+    theme entirely, because its section list is fixed by the vendor's
+    template.
+
+Each renderer produces a complete HTML document. htmlToPdf() in
+lib/renderReportPdf.ts then prints that through headless Chromium via
+Puppeteer.
+
+TWO THINGS THE RENDERERS DEPEND ON
+----------------------------------
+
+  REFERENCE TABLES
+    The vendor's spreadsheets, imported into the *_reference and fwm_*
+    tables by scripts/import-reference-data.mjs. The report looks up a
+    client's character number, note pair or stress score in these to
+    find the paragraph that belongs to it. Superadmins can edit them at
+    /admin/reference-data.
+
+  CACHED AI COPY
+    FWM's opening overview is composed once per round and stored, so
+    every download reissues the same words. Add ?refresh=1 to replace a
+    bad first result.
+
+GUARD RAIL
+----------
+An overview or fwm request for a client who has neither an iEmoWave
+Full nor an Aquera Mind Report upload returns 422 with the reason,
+rather than rendering a page full of gaps.
+
+
+========================================================================
+STEP 7 - DELIVERY TO THE CUSTOMER
+========================================================================
+
+Route: POST /api/deliver-report
+Code:  deliverReportToQuantemo() in lib/quantemoDelivery.ts
+
+This is the one route that writes into a CUSTOMER'S account rather than
+into EmoWave's own data. For that reason it stays an explicit staff
+action - it never fires automatically when a round is processed.
+
+What it does, in order:
+
+  1. Renders the PDF for the requested variant.
+  2. Uploads it to Quantemo's Storage bucket.
+  3. Inserts a row into Quantemo's reports table. That row is what makes
+     the report appear in the customer's account.
+  4. Marks the GeneratedReport row as delivered.
+
+DOUBLE-SEND GUARD
+-----------------
+A second delivery of the same variant returns 409 instead of
+re-sending. That stops staff double-clicking, or reopening a preview
+later and forgetting it already went out.
+
+One exception: if the customer made a purchase AFTER the last delivery,
+they are paying for that report a second time and are owed a fresh
+copy, so it goes through. A genuine correction is still possible but
+has to be asked for explicitly with resend: true.
+
+
+========================================================================
+THE EXTRA TOOLS IN THE WORKSPACE
+========================================================================
+
+These sit alongside the main pipeline and all read the same client
+data:
+
+  CHAT       /api/workspace/[id]/chat
+             Ask questions about a client. Grounded in their extracted
+             facts.
+
+  STUDIO     /studio/[kind]/[assessmentId]
+             Five Gemini-generated deliverables from the same data:
+             Slide Deck, Flashcards, Quiz, Infographic, Data Table.
+             Rendered as standalone HTML and iframed into the Studio
+             modal.
+
+  MIND MAP   /admin/mind-map/[assessmentId]
+             An SVG tree of the client's profile.
+
+  NOTES      /api/notes
+             Staff notes against a round.
+
+Every one of these follows the same rule as the report renderers:
+grounded in the client's real data, never invented. lib/mindMap.ts
+returns null on failure rather than a fabricated map, and the Studio
+renders a visible error card inside the frame rather than a blank
+panel.
+
+
+========================================================================
+THE WHOLE FLOW AT A GLANCE
+========================================================================
+
+  Quantemo order (paid, collection = EmoWave)
+          |
+          +-- webhook  /api/webhooks/quantemo-order   (auto, public URL)
+          +-- manual   "+ Add to Workspace"           (works anywhere)
+          |
+          v
+  processQuantemoOrder()
+          -> Client (a person) + Assessment (a round)
+          |
+          v
+  Staff upload 3 vendor PDFs          /admin/workspace
+          |
+          v
+  extractTemplateFacts()
+          pdfjs / position-based / Gemini Vision
+          -> ReportFact rows + /extractions dump
+          |
+          v
+  Staff review and correct            /admin/facts
+          + reportGapCheck warnings
+          |
+          v
+  Render                              full / overview / fwm
+          + vendor reference tables
+          -> HTML -> Puppeteer -> PDF
+          |
+          v
+  Deliver                             upload to Quantemo Storage
+                                      + insert Quantemo reports row
+                                      -> appears in customer's account
+
+
+========================================================================
+WHERE THE OUTSIDE SERVICES FIT
+========================================================================
+
+  GEMINI
+    Used for: paraphrasing facts, reading the Note Balance chart, FWM
+              overview copy, Studio artifacts, Mind Map, Chat.
+    Key:      GEMINI_API_KEY
+
+  SUPABASE (QUANTEMO'S PROJECT)
+    Used for: staff auth, customer and order lookup, report delivery,
+              Storage.
+    Keys:     NEXT_PUBLIC_SUPABASE_URL,
+              NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,
+              QUANTEMO_SUPABASE_SERVICE_KEY
+
+  SUPABASE (EMOWAVE'S PROJECT)
+    Used for: the app's own database, via Prisma.
+    Keys:     DATABASE_URL, DIRECT_URL
+
+  PUPPETEER
+    Used for: HTML to PDF, for every report.
+
+  RESEND
+    Used for: email - but it is NOT wired to anything real. Only
+              /api/test-email calls it, because delivery happens inside
+              Quantemo instead.
+    Key:      RESEND_API_KEY
+
+
+========================================================================
+For deployment steps, see GO-LIVE.md
+========================================================================

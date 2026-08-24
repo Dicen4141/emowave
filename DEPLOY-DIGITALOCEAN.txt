@@ -1,0 +1,309 @@
+========================================================================
+EMOWAVE - DEPLOYING TO DIGITALOCEAN
+========================================================================
+
+WHICH DIGITALOCEAN PRODUCT
+--------------------------
+Use APP PLATFORM with a Dockerfile.
+
+DigitalOcean is a good fit because EmoWave needs a long-running
+container, not a serverless function. It launches a real headless
+Chromium through Puppeteer to print every report
+(lib/renderReportPdf.ts line 350), and it writes debug dumps to disk.
+Neither of those works on Vercel-style serverless.
+
+App Platform gives you: git push to deploy, automatic HTTPS, and a
+public URL - which is the thing that finally lets Quantemo's order
+webhook reach EmoWave.
+
+A Droplet also works and is covered at the bottom. Start with App
+Platform unless you specifically want to manage the server yourself.
+
+Two files have already been created for this:
+  Dockerfile        how the container is built
+  .dockerignore     what stays out of the image
+
+
+========================================================================
+BEFORE YOU DEPLOY ANYTHING
+========================================================================
+
+STEP 0 - FIX THE BUILD. IT CURRENTLY FAILS.
+-------------------------------------------
+`npx next build` dies on two type errors today. DigitalOcean runs that
+exact same command, so the deploy will fail too. Fix both first:
+
+  FILE: app/api/generate-report/route.ts   LINE 124
+  Change:  return new NextResponse(pdf, {
+  To:      return new NextResponse(new Uint8Array(pdf), {
+
+  FILE: lib/renderReportPdf.ts             LINE 353
+  Change:  await page.setContent(html, { waitUntil: "networkidle0" });
+  To:      await page.setContent(html, { waitUntil: "load" });
+
+Then confirm it passes locally:
+
+  npx next build
+
+Do not skip this by turning off type checking. The first error is a
+real runtime break on PDF download, not just a type complaint.
+
+
+STEP 0b - CLOSE THE TWO OPEN ROUTES
+-----------------------------------
+Right now middleware.ts only guards /admin and /api. That leaves
+/report/[id] and /studio/[kind]/[assessmentId] reachable by anybody,
+and assessment IDs are sequential numbers. On localhost nobody can see
+that. The moment you have a public DigitalOcean URL, anyone can walk
+/report/1, /report/2, /report/3 and read your clients' reports.
+
+Fix before the first deploy, in middleware.ts:
+
+  export const config = {
+    matcher: [
+      "/admin",
+      "/admin/:path*",
+      "/api/:path*",
+      "/report/:path*",
+      "/studio/:path*",
+    ],
+  };
+
+Neither route loses anything: /report is only linked from the staff
+Reports page, and /studio is iframed from inside the authenticated
+workspace.
+
+
+STEP 0c - PUT THE PROJECT IN GIT AND PUSH IT
+--------------------------------------------
+App Platform deploys from a repository. There is no git repo in
+c:\ecowave yet.
+
+  git init
+  git add -A
+  git commit -m "EmoWave"
+
+Then create an empty private repo on GitHub and push to it.
+.gitignore already excludes .env, .env.local and /extractions, so no
+secrets go up. Check that before pushing.
+
+
+========================================================================
+DEPLOYING ON APP PLATFORM
+========================================================================
+
+STEP 1 - CREATE THE APP
+-----------------------
+  1. DigitalOcean dashboard -> Apps -> Create App
+  2. Choose GitHub as the source, authorise it, pick your repo and
+     branch (main)
+  3. App Platform will detect the Dockerfile and select Dockerfile as
+     the build method. If it offers Node.js autodetect instead, switch
+     it to Dockerfile - the autodetected Node build will not install
+     Chromium's libraries and every PDF will fail at runtime.
+
+
+STEP 2 - SIZE THE INSTANCE
+--------------------------
+Give it AT LEAST 2 GB of RAM.
+
+This is the single most common cause of a working build that then
+fails in production. Chromium needs roughly 1 to 2 GB at the moment it
+renders a report. On a 512 MB instance the container is killed
+mid-render and the request just dies, with no useful error.
+
+1 vCPU is enough. Check current pricing on DigitalOcean's own page -
+plan names and prices change.
+
+
+STEP 3 - SET THE ENVIRONMENT VARIABLES
+--------------------------------------
+This is where most deploys go wrong, because two of them are different
+from the rest.
+
+BUILD-TIME AND RUNTIME (tick "Available at build time"):
+
+  NEXT_PUBLIC_SUPABASE_URL
+  NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
+
+  Why: `next build` bakes these into the JavaScript the browser
+  downloads (see lib/supabase/client.ts). If they are only set at
+  runtime, the build produces a browser bundle with undefined
+  credentials and NOBODY CAN LOG IN - with no error in the build log.
+
+RUNTIME ONLY (mark each of these SECRET / encrypted):
+
+  DATABASE_URL                    transaction-mode pooler
+  DIRECT_URL                      session-mode pooler
+  GEMINI_API_KEY
+  QUANTEMO_SUPABASE_SERVICE_KEY   bypasses row-level security
+  QUANTEMO_WEBHOOK_SECRET         must match the webhook header, step 6
+  NEXT_PUBLIC_SITE_URL            your real https:// domain
+
+Note on NEXT_PUBLIC_SITE_URL: despite the NEXT_PUBLIC_ prefix it is
+only read server-side, by scripts/create-admin.mjs, to build the
+"set your password" invite link. If it still says localhost, every
+staff invite you send will point at localhost.
+
+ROTATE YOUR KEYS AS YOU DO THIS. The Gemini key and the Supabase
+service-role key have been sitting in a local .env.local throughout
+development. Generate fresh ones and put the new values into
+DigitalOcean, not the old ones.
+
+
+STEP 4 - DEPLOY
+---------------
+Click Create Resources. The first build takes a while - it installs
+the Chromium libraries and downloads the browser.
+
+When it finishes you get a URL like:
+
+  https://emowave-xxxxx.ondigitalocean.app
+
+Open it. You should land on the admin login page. If you see it, the
+build, the env vars and the container are all correct.
+
+
+STEP 5 - ADD YOUR DOMAIN
+------------------------
+  1. App -> Settings -> Domains -> Add Domain
+  2. Point the DNS record at DigitalOcean as instructed
+  3. HTTPS is issued automatically
+
+Then go back and update NEXT_PUBLIC_SITE_URL to the real domain.
+
+
+STEP 6 - TURN ON THE ORDER WEBHOOK
+----------------------------------
+This is the thing deployment was for. Until now orders could only
+arrive by the manual "+ Add to Workspace" button or the polling script,
+because Quantemo's servers cannot reach localhost.
+
+In QUANTEMO'S Supabase project:
+  Database -> Webhooks -> Create a new webhook
+    Table:   orders
+    Events:  Insert, Update
+    Type:    HTTP Request -> POST
+    URL:     https://<your-domain>/api/webhooks/quantemo-order
+    Header:  x-webhook-secret = <your QUANTEMO_WEBHOOK_SECRET>
+
+Test it with a real order going from pending to paid, and confirm the
+round appears in the workspace.
+
+Only once that works, stop scripts/poll-quantemo-orders.mjs. Keep the
+manual "+ Add to Workspace" button as your fallback either way.
+
+
+STEP 7 - CREATE THE STAFF ACCOUNTS
+----------------------------------
+Run locally, with NEXT_PUBLIC_SITE_URL pointing at the live domain so
+the invite link is correct:
+
+  node scripts/create-admin.mjs someone@example.com superadmin
+
+
+STEP 8 - SMOKE TEST ON THE LIVE SITE
+------------------------------------
+In this order. Stop at the first thing that fails.
+
+  1. Log in
+  2. Upload a PDF at /admin/extract
+  3. Confirm the extracted facts appear
+  4. Generate EVERY report variant - overview, full (career), full
+     (relationship), fwm - and open each PDF
+  5. Check the fonts look right in those PDFs. Chromium in a container
+     is exactly where font fallback goes wrong, and it fails silently:
+     the text still renders, just in the wrong typeface with every line
+     break moved
+  6. Deliver a report to a test Quantemo account
+  7. Confirm the file shows up in that account
+
+
+========================================================================
+TWO THINGS TO KNOW ABOUT APP PLATFORM
+========================================================================
+
+THE FILESYSTEM IS WIPED ON EVERY DEPLOY AND RESTART
+---------------------------------------------------
+The app writes extraction dumps to /app/extractions
+(lib/saveText.ts, lib/makePdf.ts, the extract routes). Those writes
+will SUCCEED - the container filesystem is writable - but the files
+disappear whenever the app redeploys or restarts.
+
+That is acceptable, because nothing reads them back. They exist to
+inspect a bad extraction afterwards. Just do not treat them as a
+record. If you want them kept, that is a reason to use a Droplet with
+a volume instead.
+
+REPORT GENERATION IS SLOW, SO WATCH FOR TIMEOUTS
+------------------------------------------------
+A full report is Gemini calls plus a multi-page Chromium render. App
+Platform puts a proxy in front of your container with its own request
+timeout, and a long render can hit it even though the container is
+still working fine.
+
+Time your slowest report during the step 8 smoke test. If a generation
+that works locally times out on App Platform, that is the platform
+proxy, not your code - and it is the main reason to move to a Droplet,
+where nothing sits between the browser and Node.
+
+
+========================================================================
+ALTERNATIVE: A DROPLET
+========================================================================
+
+Use this instead if you want persistent storage for the extraction
+dumps, or if App Platform's request timeout cuts off report generation.
+
+  1. Create a Droplet, at least 2 GB RAM, Ubuntu, with the Docker
+     marketplace image
+  2. Add a swap file. Chromium spikes, and swap is what stops a spike
+     becoming a killed container
+  3. Clone your repo onto it
+  4. Put the environment variables in a .env file on the server, with
+     permissions 600
+  5. Build and run, mounting a real directory for the dumps:
+
+       docker build \
+         --build-arg NEXT_PUBLIC_SUPABASE_URL=... \
+         --build-arg NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=... \
+         -t emowave .
+
+       docker run -d --restart unless-stopped \
+         --env-file .env \
+         -p 127.0.0.1:8080:8080 \
+         -v /srv/emowave/extractions:/app/extractions \
+         --name emowave emowave
+
+  6. Put Caddy or nginx in front for HTTPS on your domain
+  7. Enable the firewall: allow 80 and 443 only, never 8080
+
+Note the two --build-arg values. Same reason as step 3 above: those two
+are compiled into the browser bundle, so they must be present when the
+image is built, not just when it runs.
+
+
+========================================================================
+QUICK CHECKLIST
+========================================================================
+
+  [ ] Fixed both build errors, `npx next build` passes
+  [ ] Added /report and /studio to the middleware matcher
+  [ ] Pushed to a private GitHub repo, no secrets in it
+  [ ] App created from the Dockerfile (not Node autodetect)
+  [ ] Instance has at least 2 GB RAM
+  [ ] The two NEXT_PUBLIC_* vars marked available at BUILD time
+  [ ] All other vars set, and marked secret
+  [ ] Rotated the Gemini and Supabase service-role keys
+  [ ] Domain added, NEXT_PUBLIC_SITE_URL updated to it
+  [ ] Quantemo webhook created and tested with a real order
+  [ ] Polling script stopped
+  [ ] Admin accounts created
+  [ ] All four report variants generated and checked, fonts correct
+  [ ] Test delivery landed in a Quantemo account
+
+
+========================================================================
+See also: GO-LIVE.md          the host-independent go-live steps
+          HOW-IT-WORKS.txt    what the app does, step by step
+========================================================================

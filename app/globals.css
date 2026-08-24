@@ -1,0 +1,2056 @@
+/* ============================================================
+   EmoWave — design tokens
+   Single dark theme. Surfaces are layered (bg < card < raised)
+   so nested things (inputs inside cards) stay readable without
+   needing per-component overrides.
+   ============================================================ */
+
+:root {
+  --bg: #0d111b;
+  --bg-soft: #121826;
+  --card: #171e2d;
+  --raised: #1e2739;
+  --border: #28324a;
+  --border-strong: #3a476488;
+
+  --text: #e8ecf5;
+  --muted: #96a2b8;
+  --faint: #6b7891;
+
+  --accent: #5b9dfb;
+  --accent-hover: #78b0ff;
+  --accent-soft: #5b9dfb1f;
+  --accent-ring: #5b9dfb59;
+
+  --danger: #f4707c;
+  --danger-soft: #f4707c1a;
+  --success: #4ecf9a;
+  --success-soft: #4ecf9a1a;
+
+  --radius-sm: 7px;
+  --radius: 11px;
+  --radius-lg: 16px;
+
+  --shadow-sm: 0 1px 2px #0006;
+  --shadow: 0 4px 16px -4px #0009;
+  --shadow-lg: 0 18px 40px -12px #000c;
+
+  --ease: cubic-bezier(0.32, 0.72, 0, 1);
+  --speed: 160ms;
+
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  min-height: 100dvh;
+  background: var(--bg);
+  color: var(--text);
+  font-family: system-ui, -apple-system, "Segoe UI Variable Text", "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  font-size: 15px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Ambient wash behind everything — gives the flat dark bg some depth
+   without putting a gradient on any individual component. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background:
+    radial-gradient(760px 420px at 12% -8%, #2a4a8422, transparent 62%),
+    radial-gradient(620px 380px at 92% 0%, #3a2f7a1c, transparent 60%);
+}
+
+body > * {
+  position: relative;
+  z-index: 1;
+}
+
+::selection {
+  background: var(--accent-soft);
+  color: var(--text);
+}
+
+/* ============================================================
+   Layout
+   ============================================================ */
+
+.container {
+  max-width: 940px;
+  margin: 0 auto;
+  padding: 44px 22px 96px;
+  animation: rise var(--speed) var(--ease);
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+/* ============================================================
+   Typography
+   ============================================================ */
+
+h1 {
+  font-size: clamp(26px, 3.4vw, 32px);
+  font-weight: 680;
+  letter-spacing: -0.022em;
+  line-height: 1.2;
+  margin: 0 0 6px;
+}
+
+h2 {
+  font-size: 20px;
+  font-weight: 650;
+  letter-spacing: -0.015em;
+  margin: 0 0 8px;
+}
+
+h3 {
+  font-size: 16px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  margin: 0 0 10px;
+}
+
+.subtitle {
+  color: var(--muted);
+  font-size: 14.5px;
+  max-width: 68ch;
+  margin: 0 0 32px;
+}
+
+.section-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 12px;
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--faint);
+  margin: 40px 0 16px;
+}
+
+/* Hairline that fills the rest of the row after the label. */
+.section-title::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg, var(--border), transparent);
+}
+
+a {
+  color: var(--accent);
+  text-decoration: none;
+  transition: color var(--speed) var(--ease);
+}
+
+a:hover {
+  color: var(--accent-hover);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+code {
+  font-family: ui-monospace, "Cascadia Code", "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.88em;
+  background: var(--raised);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 1px 5px;
+  color: #c9d6ef;
+}
+
+strong {
+  font-weight: 640;
+  color: var(--text);
+}
+
+/* ============================================================
+   Cards
+   ============================================================ */
+
+.card {
+  background: linear-gradient(180deg, #ffffff05, transparent 60%), var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 22px 24px;
+  margin-bottom: 18px;
+  box-shadow: var(--shadow-sm);
+  transition:
+    border-color var(--speed) var(--ease),
+    box-shadow var(--speed) var(--ease),
+    transform var(--speed) var(--ease);
+}
+
+/* A card wrapped in an <a> becomes a target: lift + accent edge on hover. */
+a > .card {
+  height: 100%;
+  margin-bottom: 0;
+  cursor: pointer;
+  /* Reset the inherited link colour — only the title reacts, on hover. */
+  color: var(--text);
+}
+
+a:hover > .card {
+  border-color: var(--border-strong);
+  box-shadow: var(--shadow);
+  transform: translateY(-2px);
+}
+
+a:hover > .card .doc-name {
+  color: var(--accent-hover);
+}
+
+a:has(> .card):hover {
+  text-decoration: none;
+}
+
+/* Responsive replacement for hardcoded `repeat(3, 1fr)` grids. */
+.card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+  margin-bottom: 34px;
+}
+
+.doc-name {
+  font-size: 16.5px;
+  font-weight: 640;
+  letter-spacing: -0.012em;
+  margin: 0 0 3px;
+  transition: color var(--speed) var(--ease);
+}
+
+.doc-meta {
+  color: var(--muted);
+  font-size: 13px;
+  margin: 0 0 14px;
+}
+
+.doc-meta:last-child {
+  margin-bottom: 0;
+}
+
+.empty {
+  color: var(--faint);
+  font-style: italic;
+  font-size: 14px;
+}
+
+.error {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  color: var(--danger);
+  background: var(--danger-soft);
+  border: 1px solid #f4707c33;
+  border-radius: var(--radius-sm);
+  padding: 9px 12px;
+  margin-top: 12px;
+  font-size: 13.5px;
+}
+
+/* Inline "✓ Saved" confirmation. */
+.saved {
+  color: var(--success);
+  background: var(--success-soft);
+  border-radius: 999px;
+  padding: 2px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  animation: rise var(--speed) var(--ease);
+}
+
+/* One editable record inside a card — separated by a hairline, except
+   the last, which would otherwise draw a rule against the card edge. */
+.fact-row {
+  margin-bottom: 1.25rem;
+  padding-bottom: 1.25rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.fact-row:last-child {
+  margin-bottom: 0;
+  padding-bottom: 0;
+  border-bottom: none;
+}
+
+/* ============================================================
+   Form controls
+   Element selectors on purpose — pages render bare <select> and
+   <textarea>, which would otherwise inherit the browser's light
+   default and glare against the dark surfaces.
+   ============================================================ */
+
+/* `input:not([type])` matters — a bare <input> defaults to type=text but
+   carries no attribute, so the attribute selectors below would miss it and
+   it would fall back to the browser's light default. */
+input:not([type]),
+input[type="text"],
+input[type="number"],
+input[type="email"],
+input[type="password"],
+input[type="search"],
+select,
+textarea,
+.target {
+  width: 100%;
+  padding: 9px 12px;
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text);
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  transition:
+    border-color var(--speed) var(--ease),
+    box-shadow var(--speed) var(--ease),
+    background var(--speed) var(--ease);
+}
+
+textarea {
+  resize: vertical;
+  min-height: 62px;
+}
+
+input:hover:not(:disabled),
+select:hover:not(:disabled),
+textarea:hover:not(:disabled) {
+  border-color: var(--border-strong);
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  outline: none;
+  background: var(--bg);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-ring);
+}
+
+::placeholder {
+  color: var(--faint);
+}
+
+select {
+  appearance: none;
+  padding-right: 34px;
+  cursor: pointer;
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8' fill='none'%3E%3Cpath d='M1 1.5 6 6.5l5-5' stroke='%2396a2b8' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+}
+
+/* The native dropdown list itself is OS-rendered — force dark so the
+   open menu doesn't flash white. */
+select option {
+  background: var(--card);
+  color: var(--text);
+}
+
+label {
+  font-size: 12px;
+  font-weight: 550;
+  color: var(--muted);
+  letter-spacing: 0.01em;
+}
+
+input[type="file"] {
+  color: var(--muted);
+  font-size: 13.5px;
+  width: auto;
+  padding: 0;
+  background: none;
+  border: none;
+}
+
+input[type="file"]::file-selector-button {
+  background: var(--raised);
+  color: var(--text);
+  border: 1px solid var(--border);
+  padding: 8px 15px;
+  border-radius: var(--radius-sm);
+  font-family: inherit;
+  font-size: 13.5px;
+  font-weight: 600;
+  cursor: pointer;
+  margin-right: 12px;
+  transition:
+    background var(--speed) var(--ease),
+    border-color var(--speed) var(--ease);
+}
+
+input[type="file"]::file-selector-button:hover {
+  background: #26314799;
+  border-color: var(--border-strong);
+}
+
+.uploader {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+/* Inputs inside a flex row shouldn't stretch to 100% and wrap everything. */
+.uploader input[type="text"],
+.uploader input[type="number"],
+.uploader select {
+  flex: 1 1 200px;
+  width: auto;
+}
+
+.target {
+  margin-top: 14px;
+}
+
+/* ============================================================
+   Buttons
+   ============================================================ */
+
+/* .btn-secondary/.btn-danger also get used on <Link> (an <a> underneath)
+   wherever a button-styled action should navigate instead of handling a
+   click — e.g. Reference Data's Edit link. Without this, they'd fall back
+   to plain-link styling (no padding/shape, underline on hover) since the
+   base rule below only targeted the <button> element. */
+button,
+.btn-secondary,
+.btn-danger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  background: var(--accent);
+  color: #08111f;
+  border: 1px solid transparent;
+  padding: 9px 18px;
+  border-radius: var(--radius-sm);
+  font-family: inherit;
+  text-decoration: none;
+  font-size: 13.5px;
+  font-weight: 650;
+  letter-spacing: 0.005em;
+  white-space: nowrap;
+  cursor: pointer;
+  box-shadow: var(--shadow-sm);
+  transition:
+    background var(--speed) var(--ease),
+    transform var(--speed) var(--ease),
+    box-shadow var(--speed) var(--ease),
+    opacity var(--speed) var(--ease);
+}
+
+button:hover:not(:disabled) {
+  background: var(--accent-hover);
+  box-shadow: 0 4px 14px -4px var(--accent-ring);
+}
+
+button:active:not(:disabled) {
+  transform: translateY(1px);
+  box-shadow: none;
+}
+
+button:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+/* Quieter variant for the secondary actions that sit next to a primary
+   one (Preview, Hide, toggles) so a row of buttons has a clear lead. */
+.btn-secondary {
+  background: var(--raised);
+  color: var(--text);
+  border-color: var(--border);
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background: #26314799;
+  border-color: var(--border-strong);
+  box-shadow: var(--shadow-sm);
+  /* Beats the generic a:hover underline (higher specificity than the
+     plain .btn-secondary rule above) for the <Link>-as-button case. */
+  text-decoration: none;
+}
+
+.btn-danger {
+  background: var(--danger);
+  color: #24070b;
+}
+
+.btn-danger:hover:not(:disabled) {
+  background: #ff8a94;
+  box-shadow: 0 4px 14px -4px #f4707c66;
+  text-decoration: none;
+}
+
+/* Buttons wrapped in <a> shouldn't pick up link underline/colour. */
+a:has(> button):hover {
+  text-decoration: none;
+}
+
+/* ============================================================
+   Focus — keyboard only, never on mouse click
+   ============================================================ */
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+button:focus-visible {
+  outline-offset: 3px;
+}
+
+/* ============================================================
+   Tables
+   ============================================================ */
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+
+th,
+td {
+  text-align: left;
+  padding: 10px 13px;
+  border-bottom: 1px solid var(--border);
+}
+
+th {
+  color: var(--faint);
+  font-weight: 650;
+  font-size: 11.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  background: #ffffff04;
+}
+
+tbody tr {
+  transition: background var(--speed) var(--ease);
+}
+
+tbody tr:hover {
+  background: #ffffff05;
+}
+
+tbody tr:last-child td {
+  border-bottom: none;
+}
+
+/* ============================================================
+   Admin nav
+   ============================================================ */
+
+.admin-nav {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 11px 20px;
+  border-bottom: 1px solid var(--border);
+  background: #121826e6;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.admin-nav .brand {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-right: 14px;
+  font-weight: 680;
+  letter-spacing: -0.015em;
+  color: var(--text);
+}
+
+.admin-nav .brand:hover {
+  text-decoration: none;
+  color: var(--text);
+}
+
+.brand-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 4px var(--accent-soft);
+}
+
+.admin-nav .nav-link {
+  padding: 6px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 13.5px;
+  font-weight: 550;
+  color: var(--muted);
+  transition:
+    color var(--speed) var(--ease),
+    background var(--speed) var(--ease);
+}
+
+.admin-nav .nav-link:hover {
+  color: var(--text);
+  background: #ffffff0a;
+  text-decoration: none;
+}
+
+.admin-nav .nav-link[aria-current="page"] {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+/* ============================================================
+   Workspace — three-pane client hub
+   ============================================================ */
+
+/* The workspace fills the viewport instead of the reading-width default —
+   a 3-pane layout looks cramped and off-center if capped like a document. */
+.container.wide {
+  max-width: none;
+  padding-left: 32px;
+  padding-right: 32px;
+}
+
+.workspace-grid {
+  display: grid;
+  /* Both rails are fluid rather than fixed px. Fixed rails hold their full
+     width until a breakpoint fires and then dump a whole pane onto the next
+     row; clamping lets them give up space gradually instead, so the
+     three-pane layout survives on a laptop screen — and at browser zoom,
+     which shrinks the CSS viewport exactly the same way a smaller monitor
+     does. Studio stays the wider of the two so its three tile columns don't
+     wrap their labels onto three lines. */
+  grid-template-columns:
+    clamp(196px, 17vw, 244px)
+    minmax(0, 1fr)
+    clamp(264px, 26vw, 340px);
+  gap: 16px;
+  align-items: start;
+}
+
+/* Drop the side rails one at a time rather than all at once — the Studio
+   rail is the least useful when cramped, Sources the next. */
+@media (max-width: 1000px) {
+  .workspace-grid {
+    grid-template-columns: clamp(196px, 22vw, 240px) minmax(0, 1fr);
+  }
+
+  /* Studio has wrapped to its own row — let it use the full width for its
+     tile grid rather than sitting in the narrow first column, which is what
+     a plain 3rd grid child would otherwise do. */
+  .workspace-grid > :nth-child(3) {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 720px) {
+  .workspace-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* Heading for a pane inside a card — smaller than a page-level h3 and
+   separated from its content by a hairline. */
+.panel-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: -4px 0 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--faint);
+}
+
+.panel-count {
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--muted);
+  background: var(--raised);
+  border-radius: 999px;
+  padding: 1px 8px;
+}
+
+.source-row {
+  padding: 9px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+
+.source-row:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.source-row .source-name {
+  font-weight: 620;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+/* ---- Chat ---- */
+
+.chat-panel {
+  display: flex;
+  flex-direction: column;
+  /* Tracks the window rather than a fixed height: the lower bound keeps the
+     composer from crowding the log on a short screen, the upper one stops an
+     empty conversation from becoming a page of blank space on a tall one. */
+  height: clamp(380px, 62vh, 760px);
+}
+
+.chat-log {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  padding-right: 6px;
+}
+
+/* Messages sit at the BOTTOM of the panel like every other chat client —
+   margin-top:auto on the inner stack rather than justify-content:flex-end,
+   which clips the first message once the log overflows. */
+.chat-stack {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.msg {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  max-width: 86%;
+  animation: rise var(--speed) var(--ease);
+}
+
+.msg-user {
+  align-self: flex-end;
+  align-items: flex-end;
+}
+
+.msg-assistant {
+  align-self: flex-start;
+}
+
+.msg-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 10.5px;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+/* Copy stays out of the way until you're on the message — answers get pasted
+   into reports often enough to be worth one click. */
+.copy-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--faint);
+  font-size: 10.5px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  box-shadow: none;
+  opacity: 0;
+  transition: opacity var(--speed) var(--ease), color var(--speed) var(--ease);
+}
+
+.msg:hover .copy-btn,
+.copy-btn:focus-visible {
+  opacity: 1;
+}
+
+.copy-btn:hover:not(:disabled) {
+  background: none;
+  color: var(--accent);
+  box-shadow: none;
+}
+
+.copy-btn.done {
+  opacity: 1;
+  color: var(--success);
+}
+
+.bubble {
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  font-size: 13.5px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* The squared-off corner marks which side the message came from. */
+.bubble-user {
+  background: var(--accent-soft);
+  border-color: #5b9dfb40;
+  border-radius: var(--radius) 4px var(--radius) var(--radius);
+}
+
+.bubble-assistant {
+  background: var(--raised);
+  border-radius: 4px var(--radius) var(--radius) var(--radius);
+}
+
+/* A system notice (e.g. the Gemini rate-limit message) arrives on the same
+   channel as a real answer, so it needs to not look like one. */
+.bubble-notice {
+  background: var(--danger-soft);
+  border-color: #f4707c33;
+  border-radius: 4px var(--radius) var(--radius) var(--radius);
+  color: var(--danger);
+}
+
+.bubble a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.bubble a:hover {
+  color: var(--accent-hover);
+}
+
+/* Starter prompts for an empty conversation. */
+.suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  justify-content: center;
+  margin-top: 14px;
+}
+
+.suggestion {
+  background: var(--raised);
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 6px 13px;
+  font-size: 12px;
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: 0;
+  box-shadow: none;
+}
+
+.suggestion:hover:not(:disabled) {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--text);
+  box-shadow: none;
+}
+
+.chat-empty {
+  margin: auto 0;
+  text-align: center;
+  color: var(--faint);
+  font-size: 13.5px;
+}
+
+/* Three-dot "thinking" indicator — replaces a static "Thinking…" line. */
+.typing {
+  align-self: flex-start;
+  display: flex;
+  gap: 4px;
+  padding: 12px 14px;
+  background: var(--raised);
+  border: 1px solid var(--border);
+  border-radius: 4px var(--radius) var(--radius) var(--radius);
+}
+
+.typing span {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--muted);
+  animation: blink 1.3s infinite both;
+}
+
+.typing span:nth-child(2) {
+  animation-delay: 0.18s;
+}
+
+.typing span:nth-child(3) {
+  animation-delay: 0.36s;
+}
+
+@keyframes blink {
+  0%,
+  70%,
+  100% {
+    opacity: 0.25;
+  }
+  35% {
+    opacity: 1;
+  }
+}
+
+.chat-composer {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+/* A textarea, not an input — the send handler treats Shift+Enter as "insert a
+   newline", which an <input> can't do. Height is grown to fit in JS. */
+.chat-composer textarea {
+  flex: 1;
+  min-height: 40px;
+  resize: none;
+  overflow-y: auto;
+}
+
+/* ---- Studio rail ---- */
+
+/* Full-width, left-aligned action. `button` is inline-flex/centred, so
+   text-align alone would do nothing here — it needs justify-content. */
+/* Studio is a grid of what you can make, then a list of what has been made.
+   Each tile carries its own accent via --tile, set inline per tile, which
+   tints the icon and the hover state so the grid reads as nine distinct
+   things rather than nine identical buttons. */
+.studio-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+@media (max-width: 1100px) {
+  .studio-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.studio-tile {
+  --tile: var(--accent);
+  position: relative;
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 10px 22px 10px 11px;
+  background: var(--raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+  transition: background var(--speed) var(--ease), border-color var(--speed) var(--ease);
+}
+
+.studio-tile:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--tile) 12%, var(--raised));
+  border-color: color-mix(in srgb, var(--tile) 45%, var(--border));
+}
+
+.studio-tile:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.studio-tile-icon {
+  display: block;
+  width: 17px;
+  height: 17px;
+  margin-bottom: 8px;
+  color: var(--tile);
+}
+
+.studio-tile-label {
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+/* The chevron sits on the vertical centre of the tile, not the label, so it
+   stays put whether the label wraps to one line or two. */
+.studio-tile-chev {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  translate: 0 -50%;
+  width: 13px;
+  height: 13px;
+  color: var(--faint);
+}
+
+.studio-divider {
+  margin: 16px 0 4px;
+  border-top: 1px solid var(--border);
+}
+
+/* A generated artifact or a saved note. */
+.gen-row {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 9px 0;
+}
+
+.gen-row + .gen-row {
+  border-top: 1px solid var(--border);
+}
+
+.gen-row-icon {
+  flex: 0 0 auto;
+  width: 19px;
+  height: 19px;
+  color: var(--muted);
+}
+
+.gen-row-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.gen-row-title {
+  font-size: 13px;
+  font-weight: 550;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gen-row-meta {
+  margin-top: 2px;
+  font-size: 11.5px;
+  color: var(--faint);
+}
+
+.gen-row-actions {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 4px;
+}
+
+.icon-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 50%;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.icon-btn:hover {
+  background: var(--raised);
+  border-color: var(--border);
+  color: var(--text);
+}
+
+.icon-btn.danger:hover {
+  color: var(--danger);
+  border-color: #f4707c44;
+}
+
+.icon-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+.add-note-row {
+  display: flex;
+  justify-content: center;
+  margin-top: 16px;
+}
+
+.add-note-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 18px;
+  background: var(--raised);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 550;
+  cursor: pointer;
+}
+
+.add-note-btn:hover:not(:disabled) {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+
+.add-note-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.add-note-btn svg {
+  width: 15px;
+  height: 15px;
+}
+
+/* ---- Studio tool tiles ----
+   A three-column grid of tinted tiles — colour-coded icon, label, chevron —
+   in place of a stack of identical full-width buttons. Each tile carries its
+   own --tint/--ink pair so a tool is recognisable by colour at a glance. */
+.studio-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.tool-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+  gap: 9px;
+  width: 100%;
+  min-height: 66px;
+  padding: 9px 9px 8px;
+  background: var(--tint);
+  color: var(--ink);
+  border: 1px solid transparent;
+  border-radius: 10px;
+  box-shadow: none;
+  text-align: left;
+  white-space: normal;
+}
+
+.tool-tile:hover:not(:disabled) {
+  border-color: var(--ink);
+  background: var(--tint);
+  box-shadow: none;
+  filter: brightness(1.22);
+}
+
+.tool-tile:active:not(:disabled) {
+  transform: none;
+}
+
+.tool-tile:focus-visible {
+  outline-color: var(--ink);
+}
+
+.tool-ic {
+  display: block;
+  width: 17px;
+  height: 17px;
+  color: var(--ink);
+}
+
+/* Icon and chevron share the top row so the label below gets the tile's full
+   width — sharing a row with the chevron broke words like "Infographic"
+   across two lines at this tile size. */
+.tool-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+}
+
+.tool-name {
+  font-size: 11px;
+  font-weight: 650;
+  line-height: 1.25;
+  letter-spacing: 0;
+  hyphens: none;
+  overflow-wrap: normal;
+}
+
+/* Purchase state on the report tiles. The tiles already ARE the list of
+   reports, so the state rides on them rather than in a separate legend the
+   eye has to map back onto the grid. Only the four sold reports carry a
+   state; Mind Map and Infographic aren't bought, so they stay neutral. */
+.tool-badge {
+  align-self: flex-start;
+  margin-top: 1px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  background: color-mix(in srgb, var(--ink) 18%, transparent);
+  color: var(--ink);
+}
+
+/* Already delivered — stated, but visually quieter than an outstanding one:
+   the tile that still needs action should be the one that catches the eye. */
+.tool-badge-sent {
+  background: color-mix(in srgb, var(--success) 16%, transparent);
+  color: var(--success);
+}
+
+/* Not bought. Still clickable — staff preview and send goodwill copies — but
+   it shouldn't compete with the reports this customer actually paid for. */
+.tool-tile-idle {
+  opacity: 0.45;
+}
+
+.tool-tile-idle:hover:not(:disabled) {
+  opacity: 1;
+}
+
+.tool-chev {
+  flex: 0 0 auto;
+  width: 13px;
+  height: 13px;
+  opacity: 0.75;
+}
+
+@media (max-width: 1180px) {
+  .studio-grid {
+    grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+  }
+}
+
+/* Full-width, left-aligned action in the Studio rail. `button` is
+   inline-flex and centred, so text-align alone would do nothing here — it
+   needs justify-content. */
+.studio-btn {
+  width: 100%;
+  justify-content: flex-start;
+  margin-bottom: 8px;
+}
+
+/* An inline <a> wrapper would collapse around the button and defeat its
+   width:100% — make any anchor holding one a block. */
+a:has(> .studio-btn) {
+  display: block;
+}
+
+.studio-label {
+  margin: 16px 0 8px;
+  font-size: 11px;
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--faint);
+}
+
+.studio-link {
+  display: block;
+  margin-top: 6px;
+  font-size: 12.5px;
+}
+
+/* ============================================================
+   Generate dialog — the "configure, then make it" step that sits
+   between clicking a Studio tile and the preview opening.
+   ============================================================ */
+
+.gen-dialog {
+  width: min(560px, 92vw);
+}
+
+.gen-dialog-title {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.gen-dialog-title svg {
+  width: 18px;
+  height: 18px;
+  color: var(--accent);
+}
+
+.gen-field-label {
+  margin: 4px 0 7px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.sources-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 13px;
+  background: var(--raised);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 12.5px;
+  color: var(--text);
+}
+
+.gen-topic {
+  width: 100%;
+  min-height: 116px;
+  padding: 12px 13px;
+  background: var(--bg-soft);
+  border: 1px solid var(--accent-ring);
+  border-radius: var(--radius);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.55;
+  resize: vertical;
+}
+
+.gen-topic:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+/* The hint lives in the placeholder so it disappears the moment staff start
+   typing, exactly like the reference — hence the preserved line breaks. */
+.gen-topic::placeholder {
+  color: var(--faint);
+  white-space: pre-wrap;
+}
+
+.gen-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.gen-option {
+  padding: 7px 14px;
+  background: var(--raised);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 12.5px;
+  font-weight: 550;
+  cursor: pointer;
+}
+
+.gen-option:hover {
+  color: var(--text);
+}
+
+.gen-option[aria-pressed="true"] {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+.gen-dialog-foot {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 12px;
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.note-input {
+  width: 100%;
+  padding: 10px 12px;
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+}
+
+.note-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+textarea.note-input {
+  min-height: 150px;
+  line-height: 1.55;
+  resize: vertical;
+}
+
+/* ============================================================
+   Modal
+   ============================================================ */
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: #06090fbf;
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+  animation: fade var(--speed) var(--ease);
+}
+
+@keyframes fade {
+  from {
+    opacity: 0;
+  }
+}
+
+.modal {
+  width: min(640px, 100%);
+  max-height: 85vh;
+  overflow-y: auto;
+  margin-bottom: 0;
+  box-shadow: var(--shadow-lg);
+  animation: pop 200ms var(--ease);
+}
+
+@keyframes pop {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.985);
+  }
+}
+
+.modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 6px;
+}
+
+.modal-head h3 {
+  margin: 0;
+  font-size: 16px;
+}
+
+/* ============================================================
+   Scrollbar
+   ============================================================ */
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 11px;
+  height: 11px;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border: 3px solid transparent;
+  background-clip: padding-box;
+  border-radius: 999px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: #3a4764;
+  background-clip: padding-box;
+}
+
+/* ============================================================
+   Responsive
+   ============================================================ */
+
+@media (max-width: 640px) {
+  .container {
+    padding: 28px 16px 72px;
+  }
+
+  .card {
+    padding: 18px 16px;
+  }
+
+  .uploader {
+    gap: 8px;
+  }
+
+  .uploader > a,
+  .uploader > a > button,
+  .uploader > button {
+    width: 100%;
+  }
+
+  .admin-nav {
+    gap: 2px;
+    padding: 9px 12px;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .admin-nav::-webkit-scrollbar {
+    display: none;
+  }
+
+  .admin-nav .nav-link {
+    padding: 6px 9px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  a:hover > .card {
+    transform: none;
+  }
+}
+
+/* ---- Customise dialog (Studio → any generated tool) ---- */
+
+/* Shown before a Gemini call is spent, so format/length/focus are chosen up
+   front rather than discovered to be wrong after generating. */
+.cfg-label {
+  font-size: 12px;
+  color: var(--muted);
+  margin: 14px 0 7px;
+}
+
+.cfg-label:first-of-type {
+  margin-top: 4px;
+}
+
+.cfg-formats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 9px;
+}
+
+.cfg-format {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  text-align: left;
+  padding: 12px 13px;
+  background: var(--raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+  transition: background var(--speed) var(--ease), border-color var(--speed) var(--ease);
+}
+
+.cfg-format:hover {
+  border-color: var(--border-strong);
+}
+
+.cfg-format.selected {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.cfg-format-name {
+  font-weight: 600;
+  font-size: 13.5px;
+}
+
+.cfg-format-desc {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+/* Segmented control — one border around the group, dividers between. */
+.cfg-lengths {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.cfg-length {
+  padding: 7px 16px;
+  background: var(--raised);
+  border: 0;
+  border-left: 1px solid var(--border);
+  color: var(--muted);
+  font: inherit;
+  cursor: pointer;
+}
+
+.cfg-length:first-child {
+  border-left: 0;
+}
+
+.cfg-length.selected {
+  background: var(--accent-soft);
+  color: var(--text);
+  font-weight: 600;
+}
+
+.cfg-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 9px;
+}
+
+.cfg-chip {
+  padding: 5px 11px;
+  background: var(--raised);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.cfg-chip:hover {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+.cfg-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+/* ============================================================
+   Auth screens (login, set password)
+   Rendered without the admin nav — see app/admin/layout.tsx — so
+   these own the full viewport and centre themselves in it.
+   ============================================================ */
+
+.auth-screen {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100dvh;
+  padding: 24px;
+}
+
+.auth-card {
+  width: 100%;
+  max-width: 380px;
+  margin-bottom: 0;
+  padding: 30px 30px 26px;
+  animation: rise var(--speed) var(--ease);
+}
+
+.auth-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 17px;
+  font-weight: 680;
+  letter-spacing: -0.015em;
+}
+
+.auth-title {
+  margin: 18px 0 4px;
+  font-size: 19px;
+  font-weight: 650;
+  letter-spacing: -0.015em;
+}
+
+.auth-sub {
+  margin: 0 0 22px;
+  font-size: 13.5px;
+  color: var(--muted);
+}
+
+.auth-field {
+  display: block;
+  margin-bottom: 15px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.auth-field input {
+  margin-top: 6px;
+}
+
+/* The reveal toggle sits inside the input's own box rather than beside it,
+   so the field keeps its full width. */
+.auth-password {
+  position: relative;
+}
+
+.auth-password input {
+  padding-right: 62px;
+}
+
+.auth-reveal {
+  position: absolute;
+  right: 5px;
+  bottom: 5px;
+  padding: 5px 9px;
+  background: none;
+  border: none;
+  box-shadow: none;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.auth-reveal:hover:not(:disabled) {
+  background: var(--raised);
+  color: var(--text);
+  box-shadow: none;
+}
+
+.auth-submit {
+  width: 100%;
+  margin-top: 6px;
+  justify-content: center;
+}
+
+.auth-error {
+  margin-bottom: 4px;
+}
+
+.auth-foot {
+  margin: 20px 0 0;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+  font-size: 12.5px;
+  color: var(--faint);
+}
+
+/* Pushed to the far end of the admin nav — the nav's own gap keeps the
+   links tight on the left, so this needs its own auto margin. */
+.nav-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: auto;
+}
+
+.nav-user {
+  font-size: 12.5px;
+  color: var(--faint);
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nav-signout {
+  padding: 5px 12px;
+  font-size: 12.5px;
+}
+
+@media (max-width: 620px) {
+  /* On a narrow nav the button matters and the address doesn't. */
+  .nav-user {
+    display: none;
+  }
+}
+
+/* Reference Data — a real fixed-column table, matching the vendor's own
+   spreadsheet layout. table-layout: fixed + a per-field width (see
+   colWidth() in the page) is what keeps columns lined up cleanly even
+   though row heights vary a lot (one field might be "JOY", the next a
+   4-sentence paragraph) — text wraps inside its column instead of forcing
+   the row wider or getting truncated. */
+.ref-table-wrap {
+  /* No border here — the table already sits inside a .card, which draws
+     its own boundary. A second border around the table just doubled up
+     the box-within-a-box look. */
+  overflow-x: auto;
+}
+
+.ref-table {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+  font-size: 13.5px;
+}
+
+.ref-table thead th {
+  text-align: left;
+  padding: 12px 16px;
+  font-size: 11px;
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--faint);
+  border-bottom: 1px solid var(--border);
+}
+
+.ref-table tbody td {
+  padding: 16px;
+  line-height: 1.6;
+  color: var(--text);
+  vertical-align: top;
+  white-space: normal;
+  overflow-wrap: break-word;
+  border-bottom: 1px solid var(--border);
+}
+
+.ref-table tbody tr:hover td {
+  background: var(--bg-soft);
+}
+
+.ref-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.ref-td-id {
+  font-weight: 650;
+}
+
+.ref-td-actions {
+  white-space: nowrap;
+  text-align: right;
+}
+
+.ref-td-actions .btn-secondary {
+  margin-right: 6px;
+}
+
+/* Sticky leading columns — Note + Music Note, Stress From + Stress To, etc.
+   (see leadingStickyFields() in the page) — pinned in place while the long
+   text columns scroll sideways underneath, so the row's "at a glance"
+   identity is always visible. Needs an opaque background (matching the
+   card's own, since the columns scrolling past would otherwise show through
+   the sticky cell) and a small shadow to read as "in front of" the
+   scrolling content rather than just another column. */
+.ref-th-sticky,
+.ref-td-sticky {
+  position: sticky;
+  z-index: 1;
+  background: var(--card);
+  box-shadow: 2px 0 6px -2px #00000066;
+}
+
+.ref-table tbody tr:hover .ref-td-sticky {
+  background: var(--bg-soft);
+}
+
+/* Edit/Delete, pinned on the right for the same reason — the actions
+   should never be scrolled out of reach on a table with many columns.
+   Shadow points the opposite way (content approaches from the left). */
+.ref-th-sticky-right,
+.ref-td-sticky-right {
+  position: sticky;
+  right: 0;
+  z-index: 1;
+  background: var(--card);
+  box-shadow: -2px 0 6px -2px #00000066;
+}
+
+.ref-table tbody tr:hover .ref-td-sticky-right {
+  background: var(--bg-soft);
+}
+
+/* Mind Map — entrance + interaction animations. Root/branches pop in on
+   load, connector lines "draw" themselves via the SVG pathLength trick, and
+   a branch's children cascade in on expand instead of snapping into place. */
+.mindmap-svg-enter {
+  animation: mindmapRise 320ms var(--ease);
+}
+@keyframes mindmapRise {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+}
+
+.mindmap-pop {
+  animation: mindmapPop 260ms var(--ease) backwards;
+}
+@keyframes mindmapPop {
+  from {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+}
+
+.mindmap-branch-tile {
+  transform-box: fill-box;
+  transform-origin: center;
+  transition:
+    transform var(--speed) var(--ease),
+    filter var(--speed) var(--ease);
+}
+.mindmap-branch-tile:hover {
+  transform: scale(1.045);
+  filter: brightness(1.08);
+}
+
+.mindmap-chevron {
+  transform-box: fill-box;
+  transform-origin: center;
+  transition: transform 220ms var(--ease);
+}
+.mindmap-chevron-open {
+  transform: rotate(90deg);
+}
+
+.mindmap-child-enter {
+  animation: mindmapChildIn 220ms var(--ease) backwards;
+}
+@keyframes mindmapChildIn {
+  from {
+    opacity: 0;
+    transform: translateX(-10px);
+  }
+}
+
+.mindmap-line-draw {
+  stroke-dasharray: 1;
+  animation: mindmapDraw 500ms var(--ease) forwards;
+}
+@keyframes mindmapDraw {
+  from {
+    stroke-dashoffset: 1;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+/* ============================================================
+   Clients page
+   ============================================================ */
+
+.client-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.client-toolbar input[type="search"] {
+  flex: 1 1 240px;
+  min-width: 0;
+}
+
+.filter-chips {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.client-card {
+  padding: 16px 18px;
+}
+
+.client-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+/* One round belonging to a client. */
+.round-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0;
+}
+
+.round-row + .round-row {
+  border-top: 1px solid var(--border);
+}
+
+/* Counts up from the client's first round, so "1" is always their earliest
+   even though the list is newest-first. */
+.round-no {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.round-title {
+  font-size: 13.5px;
+  font-weight: 550;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.round-meta {
+  margin-top: 1px;
+  font-size: 12px;
+  color: var(--faint);
+}
+
+.round-sources {
+  display: flex;
+  gap: 5px;
+  flex-wrap: wrap;
+  margin-top: 5px;
+}
+
+.round-open {
+  flex: 0 0 auto;
+  padding: 5px 13px;
+  font-size: 12.5px;
+}
+
+.tag {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--raised);
+  font-size: 11px;
+  font-weight: 550;
+  color: var(--muted);
+}
+
+.tag-ok {
+  border-color: #4ecf9a55;
+  background: var(--success-soft);
+  color: var(--success);
+}
+
+.tag-warn {
+  border-color: #f4707c40;
+  background: var(--danger-soft);
+  color: var(--danger);
+}

@@ -1,0 +1,579 @@
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  directUrl  = env("DIRECT_URL")
+  extensions = [uuid_ossp(map: "uuid-ossp", schema: "extensions"), vector]
+}
+
+// One PDF = one Document (holds the "name" from the top of the page).
+model Document {
+  id        Int      @id @default(autoincrement())
+  name      String // the name extracted from the front of the PDF
+  fileName  String // original uploaded file name
+  createdAt DateTime @default(now())
+  rows      Row[] // the table rows belonging to this document
+}
+
+// One row of the table inside the PDF.
+model Row {
+  id         Int      @id @default(autoincrement())
+  item       String
+  quantity   String
+  price      String
+  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  documentId Int
+}
+
+// Who a person is. Deliberately thin: name, email and age all live in
+// Quantemo's public.users (same Supabase project — see lib/quantemo.ts) and
+// are read from there. Copying them here would give this database two
+// customer lists that disagree with each other within a week.
+//
+// quantemoUuid is nullable because the assessments that existed before this
+// table had no email to resolve one from, and no database-level foreign key
+// points at public.users — that table belongs to Quantemo and isn't in this
+// schema, so it's linked by value and looked up in code.
+model Client {
+  id               BigInt       @id @default(autoincrement())
+  // The Quantemo ACCOUNT that pays. Deliberately NOT unique any more: one
+  // account can buy for a whole family, and each of those people is their own
+  // Client. Before this, every purchase an account made collapsed into a
+  // single person — which is why one buyer ended up with eight "rounds" that
+  // were really different humans.
+  quantemoUuid     String?      @map("quantemo_uuid") @db.Uuid
+  // Quantemo's user_family_members.id — the person this Client IS, as opposed
+  // to who paid for them. Unique: one profile, one person, for good. Null on
+  // rows created before profiles existed and on any order that arrives
+  // without one, which fall back to matching by quantemoUuid alone.
+  subjectProfileId Int?         @unique @map("subject_profile_id")
+  createdAt        DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  assessments      Assessment[]
+
+  // Buyer lookups are no longer served by the unique constraint above.
+  @@index([quantemoUuid])
+  @@map("clients")
+}
+
+// One ROUND — a single purchase — not one person. A client who buys again
+// gets a new Assessment rather than overwriting the old one, which is what
+// keeps past reports reissuable and gives the chat something to compare.
+model Assessment {
+  id                       BigInt                     @id @default(autoincrement())
+  // The name read off THIS round's PDF. Stays per-round on purpose: it's what
+  // that upload actually said, and it's the display name for clients not yet
+  // linked to Quantemo.
+  customerId               String                     @map("customer_id")
+  clientId                 BigInt?                    @map("client_id")
+  client                   Client?                    @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  // Frozen at generation time rather than read live: a report saying "age 42"
+  // must still say 42 when reopened next year.
+  ageAtAssessment          Int?                       @map("age_at_assessment")
+  // Who this round is ABOUT, when the purchase named someone other than the
+  // buyer. Snapshotted rather than read live from the Client's profile for the
+  // same reason ageAtAssessment is: a report that said "Mrs Lai, 68" must
+  // still say that if the profile is later edited or corrected.
+  //
+  // subjectDob is the load-bearing one — the Journey Overview / Lifepath
+  // Blueprint divides an age into twelve brackets, and without the subject's
+  // own date of birth a child's chart is drawn on their parent's timeline.
+  subjectName              String?                    @map("subject_name")
+  subjectDob               DateTime?                  @map("subject_dob") @db.Date
+  subjectRelationship      String?                    @map("subject_relationship") // self | child | parent | spouse
+  // Admin-entered, matched against Quantemo's own users table by exact
+  // email (see lib/quantemo.ts) — customerId is just the client's extracted
+  // name, which isn't unique enough to match reliably (confirmed duplicate
+  // names in Quantemo's own data).
+  customerEmail            String?                    @map("customer_email")
+  fulfillmentType          String?                    @map("fulfillment_type")
+  // Set only when this round was auto-created from a paid Quantemo order
+  // (see app/api/webhooks/quantemo-order) — Quantemo's own orders.id.
+  // Unique so a duplicate webhook delivery for the same order can't create
+  // a second round for it.
+  quantemoOrderId          Int?                       @unique @map("quantemo_order_id")
+  status                   String                     @default("pending")
+  createdAt                DateTime                   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                DateTime                   @default(now()) @map("updated_at") @db.Timestamptz(6)
+  facts                    ReportFact[]
+  stressContent            StressContent?
+  emotionalStateContent    EmotionalStateContent?
+  sensoryAttributesContent SensoryAttributesContent?
+  presentCharacterContent  PresentCharacterContent?
+  topAttributeContent      TopAttributeContent[]
+  wellnessChallengeContent WellnessChallengeContent[]
+  journeyOverviewContent   JourneyOverviewContent?
+  fwmOverviewContent       FwmOverviewContent?
+  mindMapContent           MindMapContent?
+  studioArtifacts          StudioArtifact[]
+  notes                    Note[]
+  generatedReports         GeneratedReport[]
+  purchases                ReportPurchase[]
+
+  @@index([clientId])
+  @@map("assessments")
+}
+
+// A PDF this round produced, stored in Supabase Storage. The row is a pointer;
+// the file is the durable artifact.
+//
+// Reports are stored rather than re-rendered on demand because Quantemo serves
+// them to customers: rendering runs headless Chrome (slow, and it can fail),
+// and any change to the renderer would silently alter reports customers have
+// already received. `variant`/`theme` mirror app/api/generate-report's own
+// query params, so a stored report can be regenerated with the same arguments.
+// One paid Quantemo order = one report the customer is entitled to. Kept
+// separate from Assessment.quantemoOrderId because a client can buy several
+// reports off the SAME round (the overview now, Financial next month) — that
+// single column could only ever hold one of them, and a second purchase used
+// to overwrite it, quietly making the earlier order undeliverable.
+model ReportPurchase {
+  id                BigInt     @id @default(autoincrement())
+  assessmentId      BigInt     @map("assessment_id")
+  // Quantemo's orders.id. Unique so a redelivered webhook (or someone
+  // clicking "Add to Workspace" twice) records the purchase once.
+  quantemoOrderId   Int        @unique @map("quantemo_order_id")
+  quantemoProductId Int        @map("quantemo_product_id")
+  // Which report was bought — same vocabulary as GeneratedReport.variant, so
+  // "have they paid for this?" is a direct comparison against what was sent.
+  slug              String
+  purchasedAt       DateTime   @default(now()) @map("purchased_at") @db.Timestamptz(6)
+  assessment        Assessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+
+  @@index([assessmentId])
+  @@map("report_purchases")
+}
+
+model GeneratedReport {
+  id           BigInt     @id @default(autoincrement())
+  assessmentId BigInt     @map("assessment_id")
+  // Matches generated_reports_variant_check in the database. "career" /
+  // "relationship" are themes of the EmoWave report and "fwm" is its own
+  // renderer, but each is a separately-sold deliverable, so each gets its own
+  // row rather than being folded into "full".
+  variant      String     @default("full") // overview | full | career | relationship | fwm
+  theme        String? // "career" | "finance" | "relationship"
+  // Kept predictable — reports/<assessmentId>/... — so a file stays findable
+  // by round even if this row is ever lost.
+  storagePath  String     @map("storage_path")
+  generatedAt  DateTime   @default(now()) @map("generated_at") @db.Timestamptz(6)
+  // Set when this is the copy a customer actually received. Staff regenerating
+  // while checking a fix leave undelivered rows that can be pruned.
+  delivered    Boolean    @default(false)
+  assessment   Assessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+
+  @@index([assessmentId])
+  @@map("generated_reports")
+}
+
+// Staff-written notes kept alongside a client's generated deliverables in the
+// Studio panel. Deliberately NOT one of the "*Content" tables: nothing here is
+// extracted or model-generated, it's a human's own working note, so it never
+// feeds back into report rendering or a Gemini prompt.
+model Note {
+  id           BigInt     @id @default(autoincrement())
+  assessmentId BigInt     @map("assessment_id")
+  title        String
+  body         String     @default("")
+  createdAt    DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  assessment   Assessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+
+  @@index([assessmentId])
+  @@map("notes")
+}
+
+// Cached Mind Map generation — computed once, read many times, same pattern
+// as every other Gemini-touched content table. Mind Map used to regenerate
+// live on every single view (no caching at all), which burns Gemini quota
+// for no reason if the same client's map is opened twice — this fixes that.
+// A stale cache is fine to keep showing; regeneration only happens when
+// staff explicitly click "Regenerate" (new sources uploaded, etc.).
+model MindMapContent {
+  id           BigInt     @id @default(autoincrement())
+  assessmentId BigInt     @unique @map("assessment_id")
+  data         Json // { root: string, branches: [{ label, children }] }
+  createdAt    DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  assessment   Assessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+
+  @@map("mind_map_content")
+}
+
+// The Studio's generated deliverables (slide deck, flashcards, quiz,
+// infographic, data table). One table with a `kind` discriminator rather than
+// five near-identical tables — they differ only in the shape of their JSON,
+// which each kind's own schema in lib/studioArtifacts.ts already defines.
+// Cached exactly like MindMapContent: generated once, regenerated only when
+// staff explicitly ask (?refresh=true), so re-opening one is a plain DB read.
+model StudioArtifact {
+  id           BigInt     @id @default(autoincrement())
+  assessmentId BigInt     @map("assessment_id")
+  kind         String // "slide-deck" | "flashcards" | "quiz" | "infographic" | "data-table"
+  data         Json
+  createdAt    DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  assessment   Assessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+
+  @@unique([assessmentId, kind])
+  @@map("studio_artifacts")
+}
+
+// Raw, vendor-extracted text only — never AI-rewritten. Anything Gemini
+// generates or rewords lives in the section-specific "*Content" tables below
+// instead, so it's always clear which stored text came straight off the PDF
+// versus which was produced by a model call.
+model ReportFact {
+  id           BigInt                 @id @default(autoincrement())
+  assessmentId BigInt                 @map("assessment_id")
+  sourceReport String                 @map("source_report")
+  section      String
+  label        String
+  value        Json
+  embedding    Unsupported("vector")?
+  createdAt    DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
+  assessment   Assessment             @relation(fields: [assessmentId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([assessmentId], map: "report_facts_assessment_idx")
+  @@index([embedding])
+  @@map("report_facts")
+}
+
+// Section 1 "Your Stress Level" — Gemini's paraphrased rewrite of the
+// vendor's stress-type description.
+model StressContent {
+  id           BigInt     @id @default(autoincrement())
+  assessmentId BigInt     @unique @map("assessment_id")
+  description  String?
+  createdAt    DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  assessment   Assessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+
+  @@map("stress_content")
+}
+
+// Section 2 "Your Emotional State" — Gemini's paraphrased rewrite of every
+// prose field in that section (Note 1/2 reactions, Public/Private Self,
+// Frequent/Core Emotion, either the iEmoWave-Full or Mind Report source).
+model EmotionalStateContent {
+  id                  BigInt     @id @default(autoincrement())
+  assessmentId        BigInt     @unique @map("assessment_id")
+  note1ReactionDesc   String?    @map("note1_reaction_desc")
+  note2ReactionDesc   String?    @map("note2_reaction_desc")
+  publicSelfFull      String?    @map("public_self_full")
+  privateSelfFull     String?    @map("private_self_full")
+  frequentEmotionDesc String?    @map("frequent_emotion_desc")
+  coreEmotionDesc     String?    @map("core_emotion_desc")
+  empoweringDesc      String?    @map("empowering_desc")
+  disempoweringDesc   String?    @map("disempowering_desc")
+  createdAt           DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  assessment          Assessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+
+  @@map("emotional_state_content")
+}
+
+// Section 3 "Sensory Attributes" (iEmoWave-Full only) — Gemini's paraphrased
+// rewrite of the Base/Next descriptions.
+model SensoryAttributesContent {
+  id           BigInt     @id @default(autoincrement())
+  assessmentId BigInt     @unique @map("assessment_id")
+  baseDesc     String?    @map("base_desc")
+  nextDesc     String?    @map("next_desc")
+  createdAt    DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  assessment   Assessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+
+  @@map("sensory_attributes_content")
+}
+
+// Section 5 "Present Character and Real Intention" — trait + summary for
+// both rows. Populated either from iEmoWave-Full's own paraphrased
+// trait/summary fields, or (when there's no iEmoWave-Full upload) from the
+// Mind Report fallback: a Gemini-generated trait phrase plus the
+// paraphrased Sensory-type paragraph as the summary. Character itself
+// ("9 - Mediator") is the vendor's own label, not AI content, so it stays
+// in ReportFact — only trait/summary live here.
+model PresentCharacterContent {
+  id             BigInt     @id @default(autoincrement())
+  assessmentId   BigInt     @unique @map("assessment_id")
+  presentTrait   String?    @map("present_trait")
+  presentSummary String?    @map("present_summary")
+  realTrait      String?    @map("real_trait")
+  realSummary    String?    @map("real_summary")
+  createdAt      DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  assessment     Assessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+
+  @@map("present_character_content")
+}
+
+// "Your Top 5 Constructive/Restrictive Attributes" — one row per attribute.
+// Populated either from iEmoWave-Full's own paraphrased descriptions, or
+// (when there's no iEmoWave-Full upload) from Gemini's dedup+summarize pass
+// over the Emotional Notes trait-score categories. Label is the trait name
+// (copied verbatim from the source in the fallback case); description is
+// always Gemini-written.
+model TopAttributeContent {
+  id           BigInt     @id @default(autoincrement())
+  assessmentId BigInt     @map("assessment_id")
+  kind         String // "constructive" | "restrictive"
+  rank         Int
+  label        String
+  description  String
+  createdAt    DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  assessment   Assessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+
+  @@index([assessmentId], map: "top_attribute_content_assessment_idx")
+  @@map("top_attribute_content")
+}
+
+// "Potential Mental & Physical Wellness Challenge" (iEmoWave-Full only) —
+// one row per challenge, description paraphrased by Gemini.
+model WellnessChallengeContent {
+  id           BigInt     @id @default(autoincrement())
+  assessmentId BigInt     @map("assessment_id")
+  rank         Int
+  label        String
+  description  String
+  createdAt    DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  assessment   Assessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+
+  @@index([assessmentId], map: "wellness_challenge_content_assessment_idx")
+  @@map("wellness_challenge_content")
+}
+
+// The FWM report's opening overview — the only generated prose in that
+// report, and the one section the vendor's template marks as AI-written (see
+// lib/fwmOverview.ts). Cached per round like MindMapContent: the PDF is
+// re-rendered on every download, and a client reopening their report must see
+// the same words they saw the first time, not a fresh generation.
+model FwmOverviewContent {
+  id           BigInt     @id @default(autoincrement())
+  assessmentId BigInt     @unique @map("assessment_id")
+  paragraphs   Json // string[] — rendered one <p> each
+  // Which model wrote it, so copy generated before a model change is
+  // identifiable rather than anonymous.
+  model        String
+  createdAt    DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  assessment   Assessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+
+  @@map("fwm_overview_content")
+}
+
+// Section 8 "Your Journey Overview" fallback — the Note Balance chart's 12
+// per-note values, read off the chart image by Gemini Vision (no OCR
+// available), used when there's no iEmoWave-Full "Past Experiences" data.
+model JourneyOverviewContent {
+  id                BigInt     @id @default(autoincrement())
+  assessmentId      BigInt     @unique @map("assessment_id")
+  noteBalanceValues Json?      @map("note_balance_values") // 12 integers, one per note C..B in order
+  createdAt         DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  assessment        Assessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+
+  @@map("journey_overview_content")
+}
+
+// ============================================================
+// Vendor reference data — static lookup tables (imported from the vendor's
+// own spreadsheets, see scripts/import-reference-data.ts), NOT per-client
+// data. Given a client's own already-extracted key (a note letter, a
+// character number, a stress score, a trait code), the report looks up the
+// canonical vendor text here instead of relying solely on fragile per-PDF
+// text extraction or an AI guess. One row per key, never written to at
+// request time — only re-imported if the vendor's source spreadsheet
+// changes.
+// ============================================================
+
+// "Data-Behaviour Pattern.xlsx" — one row per musical note (C, C#, D, ...,
+// B), the same 12-note scale as Note 1/Note 2 throughout the report.
+model NoteBehaviorReference {
+  note                  String  @id // "C", "C#", "D", ...
+  musicNote             String? @map("music_note")
+  generalReaction       String  @map("general_reaction")
+  empowering            String?
+  disempowering         String?
+  socialBehaviorPattern String? @map("social_behavior_pattern")
+  positiveEmotionDesc   String? @map("positive_emotion_desc")
+  negativeEmotionDesc   String? @map("negative_emotion_desc")
+  childrenReaction      String? @map("children_reaction")
+
+  @@map("note_behavior_reference")
+}
+
+// "Data-Present and Real Intention Characters.xlsx" — one row per
+// Character number (0-9) per language; Section 5 looks this up by the
+// number the client's own Mind Report already gives (e.g. "The Mediator
+// (9)" -> number 9).
+model CharacterReference {
+  language         String
+  number           Int
+  character        String // "9 - Mediator"
+  presentCharacter String? @map("present_character") // the short trait, e.g. "Universal Love"
+  summary          String?
+  workEnvironment  String? @map("work_environment")
+  ideasJobs        String? @map("ideas_jobs")
+  growPath         String? @map("grow_path")
+
+  @@id([language, number])
+  @@map("character_reference")
+}
+
+// "Data-Frequent and Core Emotional Pattern.xlsx" — one row per emotion
+// code (e.g. "a1", "c1"), the same code prefix already seen on fields like
+// "Frequent Emotion (Mind Report)".
+model EmotionCodeReference {
+  code        String  @id
+  header      String?
+  description String?
+  explanation String? // already-paraphrased, ready-to-use version
+
+  @@map("emotion_code_reference")
+}
+
+// "Data-Empower and Disempower.xlsx" — one row per trait code (e.g. "c19",
+// "i27"), the same code prefix used across Constructive/Restrictive
+// Attributes and Wellness Challenge labels.
+model AttributeCodeReference {
+  code        String  @id
+  header      String?
+  description String?
+
+  @@map("attribute_code_reference")
+}
+
+// "Data-Stress.xlsx" — one row per stress-percentage band; looked up by
+// which [stressFrom, stressTo) range the client's own stress score/index
+// falls into.
+model StressRangeReference {
+  id                   Int     @id @default(autoincrement())
+  stressFrom           Float   @map("stress_from")
+  stressTo             Float   @map("stress_to")
+  descriptionEn        String? @map("description_en") // vendor's own raw wording
+  indicator            String? // already-paraphrased, ready-to-use version
+  childrenIntelligence String? @map("children_intelligence")
+
+  @@map("stress_range_reference")
+}
+
+// ---------------------------------------------------------------------------
+// Financial Wealth Management (FWM) reference data — the "EmoWave 5.0" report
+// type, mapped in v1.0-Emowave-FWM Report.docx. Its narrative copy is written
+// by hand in the vendor's workbooks (v1.0- DataStress_FWM.xlsx,
+// v1.0_Characteristics_FWM_DataSet.xlsx, v1.1-EQ_Behaviour.xlsx) and looked up
+// by the client's own assessment values — nothing here is model-generated.
+//
+// These are separate tables rather than extra columns on the existing
+// *Reference models: the FWM workbooks reword the same bands and characters
+// for a financial audience, so merging them would mean either overwriting the
+// wording the existing EmoWave report renders, or carrying two variants of
+// every column on one row. Frequent/Core Emotions and Musical Notes are the
+// exception — those FWM sheets are byte-identical in key and shape to
+// emotion_code_reference / note_behavior_reference, so the FWM report reads
+// those existing tables instead of duplicating them.
+// ---------------------------------------------------------------------------
+
+// "v1.0- DataStress_FWM.xlsx" -> All_Stress_Types. Same 8 percentage bands as
+// stress_range_reference, but FWM-specific copy plus its own
+// "Financial Intelligence" column, which has no equivalent in the base report.
+model FwmStressRange {
+  id                    Int     @id @default(autoincrement())
+  stressFrom            Float   @map("stress_from")
+  stressTo              Float   @map("stress_to")
+  general               String?
+  indicator             String?
+  financialIntelligence String? @map("financial_intelligence")
+  childrenIntelligence  String? @map("children_intelligence")
+
+  @@map("fwm_stress_range")
+}
+
+// "v1.0_Characteristics_FWM_DataSet.xlsx" -> Present Characters. One row per
+// Enneagram type 0-9, keyed by type because that's what the Mind Report's
+// "Sensory personality mode (Base)" gives ("The Helper (2)" -> 2).
+model FwmPresentCharacter {
+  type                       Int     @id
+  character                  String // "Helper"
+  presentCharacter           String? @map("present_character") // the trait, e.g. "Freedom / Will"
+  summary                    String?
+  financialPersonality       String? @map("financial_personality") // "…in via from others"
+  subconsciousMoneyBehaviors String? @map("subconscious_money_behaviors")
+  potentialFinanceChallenges String? @map("potential_finance_challenges")
+  coachingPathway            String? @map("coaching_pathway") // "Targeted Financial Wellness Coaching Pathway"
+  workEnvironment            String? @map("work_environment")
+  growPath                   String? @map("grow_path")
+  personalityStyle           String? @map("personality_style")
+  badHabits                  String? @map("bad_habits")
+  socialInfluence            String? @map("social_influence")
+  talents                    String?
+  physicalHealth             String? @map("physical_health")
+
+  @@map("fwm_present_character")
+}
+
+// "v1.0_Characteristics_FWM_DataSet.xlsx" -> Real Intention. Same 0-9 typing as
+// FwmPresentCharacter, read from "Sensory personality mode (Next)" instead.
+model FwmRealIntention {
+  type              Int     @id
+  character         String
+  realIntention     String? @map("real_intention")
+  summary           String?
+  idealWorkplace    String? @map("ideal_workplace")
+  growPath          String? @map("grow_path")
+  motivateYourself  String? @map("motivate_yourself")
+  definingChallenge String? @map("defining_challenge")
+  coreValues        String? @map("core_values") // "Creating Your Core Values"
+  possibleCareer    String? @map("possible_career")
+  coachingPathway   String? @map("coaching_pathway")
+
+  @@map("fwm_real_intention")
+}
+
+// "v1.0_Characteristics_FWM_DataSet.xlsx" -> Combination. One hand-written
+// narrative per Present Character x Real Intention pairing.
+//
+// The workbook currently ships 81 of the 100 possible pairings: "Seeker"
+// (type 0) appears in both character sheets but in neither column here, so a
+// client typed Seeker on either axis resolves to no row. The renderer treats a
+// miss as a gap rather than an error — see renderFwmReport.ts.
+model FwmCombination {
+  presentCharacter          String  @map("present_character")
+  realIntention             String  @map("real_intention")
+  financialBehaviourPattern String? @map("financial_behaviour_pattern")
+  careerThoughtProcess      String? @map("career_thought_process")
+
+  @@id([presentCharacter, realIntention])
+  @@map("fwm_combination")
+}
+
+// "v1.0- DataStress_FWM.xlsx" -> Comm_Learn. Keyed by the client's Base
+// sensory triple, e.g. "FEELING + Outward + Extrovert" (4 modalities x
+// Outward/Inward x Extrovert/Introvert = all 16 rows present).
+model FwmCommLearn {
+  base               String  @id
+  communicationStyle String? @map("communication_style")
+  learningStyle      String? @map("learning_style")
+
+  @@map("fwm_comm_learn")
+}
+
+// "v1.0- DataStress_FWM.xlsx" -> Decision_Making. Keyed by Base and Next
+// sensory joined exactly as the workbook writes it — "<base> - <next>" — all
+// 16x16 = 256 combinations present.
+model FwmDecisionMaking {
+  baseNext        String  @id @map("base_next")
+  decisionMaking  String? @map("decision_making")
+  financialChoice String? @map("financial_choice")
+
+  @@map("fwm_decision_making")
+}
+
+// "v1.1-EQ_Behaviour.xlsx" -> CombineMusicalNote. The client's Note 1 x Note 2
+// pairing (12x12 = 144 rows, all present). Note 1 leads, so the pairing is
+// ordered, not symmetric: C+D and D+C are different rows.
+model FwmNoteCombination {
+  note1             String  @map("note_1")
+  note2             String  @map("note_2")
+  behaviorPattern   String? @map("behavior_pattern")
+  financialBehavior String? @map("financial_behavior")
+
+  @@id([note1, note2])
+  @@map("fwm_note_combination")
+}
