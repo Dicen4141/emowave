@@ -357,7 +357,17 @@ export type PdfChrome = {
 // SharedArrayBuffer backing — is rejected as a response body. Chrome's PDF
 // bytes are never shared-backed, so the narrowing at the return is sound.
 export async function htmlToPdf(html: string, chrome?: PdfChrome): Promise<Uint8Array<ArrayBuffer>> {
-  const browser = await puppeteer.launch({ headless: true });
+  // --no-sandbox because the container runs as root (the image declares no
+  // USER), and Chrome refuses to start as root with its sandbox enabled:
+  // "Running as root without --no-sandbox is not supported". That failure is
+  // runtime-only — the image builds and the app boots fine, every report just
+  // 500s. --disable-dev-shm-usage because App Platform gives the container a
+  // 64 MB /dev/shm, which a full-page render outgrows and Chrome then crashes
+  // mid-print rather than reporting anything useful.
+  const browser = await puppeteer.launch({
+    headless: true,
+    args: ["--no-sandbox", "--disable-dev-shm-usage"],
+  });
   try {
     const page = await browser.newPage();
     // "load", not "networkidle0" — Puppeteer's own types stopped accepting the

@@ -11,8 +11,15 @@ FROM node:24-bookworm-slim
 # Chromium's runtime dependencies. Puppeteer downloads the browser binary
 # itself during `npm ci`, but the shared libraries it links against are not
 # bundled with it — without these, launch() fails at runtime, not at build.
+#
+# unzip is not one of those libraries, and it is not optional either:
+# @puppeteer/browsers shells out to the `unzip` binary to unpack Chrome's
+# archive on Linux, and node:*-slim doesn't ship it. Without it `npm ci` dies
+# in puppeteer's postinstall, at BUILD time, with "Puppeteer installation
+# failed due to missing unzip tool".
 RUN apt-get update && apt-get install -y --no-install-recommends \
       ca-certificates \
+      unzip \
       fonts-liberation \
       libasound2 \
       libatk-bridge2.0-0 \

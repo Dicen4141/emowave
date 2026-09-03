@@ -1,0 +1,104 @@
+# DigitalOcean App Platform spec for EmoWave.
+#
+# Deployed from the Dockerfile, NOT the Node buildpack: lib/renderReportPdf.ts
+# launches a real headless Chromium, and the buildpack image has none of the
+# shared libraries it links against. See the Dockerfile for that install list.
+#
+# Apply with:  doctl apps create --spec .do/app.yaml
+# Update with: doctl apps update <APP_ID> --spec .do/app.yaml
+name: emowave
+region: sgp                       # change to the region nearest your users
+
+services:
+  - name: web
+    dockerfile_path: Dockerfile
+    source_dir: /
+    github:
+      repo: Dicen4141/emowave
+      branch: main
+      deploy_on_push: true
+
+    http_port: 8080               # matches ENV PORT=8080 in the Dockerfile
+
+    instance_count: 1
+    # Chromium needs real memory to print a report. 512 MB gets OOM-killed
+    # mid-render; 2 GB is the smallest size that has been comfortable.
+    instance_size_slug: apps-s-1vcpu-2gb
+
+    health_check:
+      # /admin/login is the only page that renders without a session, so it is
+      # the one path that answers 200 to an unauthenticated prober. "/" is a
+      # 307 to /admin, which then bounces to login.
+      http_path: /admin/login
+      initial_delay_seconds: 30
+      period_seconds: 15
+      failure_threshold: 5
+
+    envs:
+      # --- Database (Supabase Postgres) --------------------------------------
+      # Prisma reads both. DATABASE_URL should be the POOLED connection
+      # (port 6543, add ?pgbouncer=true&connection_limit=1); DIRECT_URL the
+      # direct one (port 5432) that `prisma db push`/migrations need.
+      - key: DATABASE_URL
+        scope: RUN_AND_BUILD_TIME
+        type: SECRET
+        value: "postgresql://...:6543/postgres?pgbouncer=true&connection_limit=1"
+      - key: DIRECT_URL
+        scope: RUN_AND_BUILD_TIME
+        type: SECRET
+        value: "postgresql://...:5432/postgres"
+
+      # --- Supabase Auth -----------------------------------------------------
+      # These two MUST be RUN_AND_BUILD_TIME. `next build` inlines every
+      # NEXT_PUBLIC_* value into the browser bundle, so a runtime-only value
+      # leaves the client-side Supabase client undefined and every admin login
+      # fails. App Platform passes build-scoped vars to the matching ARG lines
+      # in the Dockerfile.
+      - key: NEXT_PUBLIC_SUPABASE_URL
+        scope: RUN_AND_BUILD_TIME
+        value: "https://<project-ref>.supabase.co"
+      - key: NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
+        scope: RUN_AND_BUILD_TIME
+        value: "<anon / publishable key>"
+
+      # Service-role key for the SAME Supabase project. Server-only.
+      - key: QUANTEMO_SUPABASE_SERVICE_KEY
+        scope: RUN_TIME
+        type: SECRET
+        value: "<service-role key>"
+
+      # --- Gemini ------------------------------------------------------------
+      - key: GEMINI_API_KEY
+        scope: RUN_TIME
+        type: SECRET
+        value: "<gemini key>"
+      # Optional — falls back to lib/gemini.ts's MODEL when unset.
+      - key: GEMINI_PROSE_MODEL
+        scope: RUN_TIME
+        value: ""
+
+      # --- Quantemo integration ----------------------------------------------
+      # Shared secret checked by app/api/webhooks/quantemo-order. Must match
+      # the header on Quantemo's Database Webhook for the `orders` table.
+      - key: QUANTEMO_WEBHOOK_SECRET
+        scope: RUN_TIME
+        type: SECRET
+        value: "<random string>"
+      # Storefront URL behind the "Quantemo" button in the admin nav. This URL
+      # must ALSO be listed under Supabase > Authentication > URL Configuration
+      # > Redirect URLs, or the magic-link jump is refused.
+      - key: QUANTEMO_APP_URL
+        scope: RUN_TIME
+        value: "https://quatemo.com"
+
+      # --- Email (Resend) ----------------------------------------------------
+      # Optional: unset means "report ready" emails fail with a clear message
+      # instead of crashing. Everything else keeps working.
+      - key: RESEND_API_KEY
+        scope: RUN_TIME
+        type: SECRET
+        value: "<resend key>"
+      # Must be on a domain verified in the Resend dashboard.
+      - key: RESEND_FROM_ADDRESS
+        scope: RUN_TIME
+        value: "EmoWave <reports@yourdomain.com>"
