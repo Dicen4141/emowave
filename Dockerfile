@@ -71,6 +71,22 @@ ARG NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
 ENV NEXT_PUBLIC_SUPABASE_URL=$NEXT_PUBLIC_SUPABASE_URL
 ENV NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=$NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
 
+# Fail loudly HERE rather than silently at runtime. `next build` inlines every
+# NEXT_PUBLIC_* value into the bundle, so an empty one is compiled in as
+# `undefined` and the first request dies in middleware.ts with "Invalid
+# supabaseUrl: Provided URL is malformed" — a 500 on every route, health checks
+# included, from an image that built and booted perfectly. This turns that into
+# an obvious build failure naming the variable.
+RUN for v in NEXT_PUBLIC_SUPABASE_URL NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY; do \
+      eval "val=\$$v"; \
+      if [ -z "$val" ]; then \
+        echo "BUILD ABORTED: $v is empty at build time."; \
+        echo "On App Platform, tick 'Available at build time' on that variable."; \
+        exit 1; \
+      fi; \
+      echo "ok: $v is set (length $(printf %s "$val" | wc -c), begins $(printf %s "$val" | cut -c1-8))"; \
+    done
+
 RUN npm run build
 
 ENV NODE_ENV=production
