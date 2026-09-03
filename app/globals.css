@@ -627,7 +627,7 @@ tbody tr:last-child td {
    Workspace — three-pane client hub
    ============================================================ */
 
-/* The workspace fills the viewport instead of the reading-width default —
+/* EmoSpace fills the viewport instead of the reading-width default —
    a 3-pane layout looks cramped and off-center if capped like a document. */
 .container.wide {
   max-width: none;
@@ -1758,6 +1758,26 @@ textarea.note-input {
   margin-left: auto;
 }
 
+/* "Quantemo 97" is a form button rather than a link (see the layout for
+   why), so it needs the browser's own button chrome stripped before the
+   shared .nav-link rules above can style it like its neighbours. */
+.nav-jump {
+  display: flex;
+}
+
+.nav-jump button.nav-link {
+  border: 0;
+  background: none;
+  font-family: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.nav-jump button.nav-link:hover {
+  color: var(--text);
+  background: #ffffff0a;
+}
+
 .nav-user {
   font-size: 12.5px;
   color: var(--faint);
@@ -1777,6 +1797,49 @@ textarea.note-input {
   .nav-user {
     display: none;
   }
+}
+
+/* Filling an empty round from an earlier one, in the Sources panel. Sits
+   under the "No sources yet" line as the second-choice path — uploading the
+   real documents is still the primary one, so this is quieter than the
+   Add source button above it. */
+.copy-facts {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line, #ffffff14);
+}
+
+.copy-facts-lead {
+  margin: 0 0 8px;
+  font-size: 12.5px;
+  color: var(--faint);
+}
+
+.copy-facts-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+/* The select has to survive a narrow sidebar: it takes the slack and lets
+   the button keep its natural width, and min-width:0 is what actually lets
+   a flex child shrink below its content. */
+.copy-facts-row select {
+  flex: 1;
+  min-width: 0;
+  font-size: 12.5px;
+  padding: 5px 6px;
+}
+
+.copy-facts-row .btn-secondary {
+  flex: none;
+  padding: 5px 12px;
+  font-size: 12.5px;
+}
+
+.copy-facts .error {
+  margin: 8px 0 0;
+  font-size: 12.5px;
 }
 
 /* Reference Data — a real fixed-column table, matching the vendor's own

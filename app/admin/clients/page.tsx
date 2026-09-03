@@ -143,14 +143,14 @@ export default function ClientsPage() {
               <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                 {b.importedAssessmentIds.length > 0 && (
                   <a className="tag tag-ok" href={`/admin/workspace?id=${b.importedAssessmentIds[0]}`}>
-                    ✓ {b.importedAssessmentIds.length} in Workspace
+                    ✓ {b.importedAssessmentIds.length} in EmoSpace
                   </a>
                 )}
                 {b.pendingOrderIds.length > 0 && (
                   <button className="btn-secondary round-open" onClick={() => handleImport(b)} disabled={importingBuyerId === b.buyerId}>
                     {importingBuyerId === b.buyerId
                       ? "Adding…"
-                      : `+ Add${b.pendingOrderIds.length > 1 ? ` ${b.pendingOrderIds.length}` : ""} to Workspace`}
+                      : `+ Add${b.pendingOrderIds.length > 1 ? ` ${b.pendingOrderIds.length}` : ""} to EmoSpace`}
                   </button>
                 )}
               </div>

@@ -412,6 +412,12 @@ const TOP5_MAX_Y = 1645; // panel bottom is 1652.4 — last baseline stops short
 const TOP5_LINE_H = 14;
 const TOP5_BULLET_GAP = 16; // bullet column -> text column, so wrapped lines hang
 const TOP5_COLS = [48, 395];
+// The two lists carry opposite meanings, so they are coloured rather than both
+// sitting in body black — green for empowering, red for dis-empowering, in
+// tones dark enough to stay legible on white in print (both clear WCAG AA at
+// this size) rather than the signal-light versions, which vibrate against the
+// panel and read as a warning box.
+const TOP5_COLORS = ["#157a4a", "#b02a1f"];
 
 function renderTopFiveLists(constructive: string[], restrictive: string[]): string[] {
   const cols = [constructive.slice(0, 5), restrictive.slice(0, 5)];
@@ -442,8 +448,9 @@ function renderTopFiveLists(constructive: string[], restrictive: string[]): stri
       // ◆ renders noticeably larger than a square/round bullet at the same
       // size, so it runs a couple of points smaller to keep the same weight
       // against the 15px item text.
-      out.push(tspanBlock(x, y, ["◆"], 0, 11, "#1f2328", 700));
-      out.push(tspanBlock(x + TOP5_BULLET_GAP, y, col[i], TOP5_LINE_H, 15, "#1f2328"));
+      const color = TOP5_COLORS[c];
+      out.push(tspanBlock(x, y, ["◆"], 0, 11, color, 700));
+      out.push(tspanBlock(x + TOP5_BULLET_GAP, y, col[i], TOP5_LINE_H, 15, color));
     });
     y += lines * TOP5_LINE_H + gap;
   });

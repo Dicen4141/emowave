@@ -39,7 +39,7 @@ export default function ExtractPage() {
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const [results, setResults] = useState<ExtractResult[]>([]);
-  // See the matching checkbox in Workspace's "Add source" modal — off by
+  // See the matching checkbox in EmoSpace's "Add source" modal — off by
   // default so a routine re-upload (fixing a bad extraction) still corrects
   // the client's current round instead of forking their history.
   const [newRound, setNewRound] = useState(false);
@@ -54,7 +54,7 @@ export default function ExtractPage() {
     // batch may need to merge into an assessment a prior file in this same
     // batch just created (matched by client name), so each upload has to
     // finish before the next one starts. Only the first file forces a new
-    // round (see the matching comment in Workspace's handleUpload) — the
+    // round (see the matching comment in EmoSpace's handleUpload) — the
     // rest of the batch joins whatever that first file just created.
     const collected: ExtractResult[] = [];
     let remainingForcesNewRound = newRound;

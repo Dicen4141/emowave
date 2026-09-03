@@ -95,7 +95,7 @@ export async function POST(req: Request) {
     // be read off the page.
     const customerId = result.clientName ?? file.name;
 
-    // Workspace sends the round the admin actually has open (`targetAssessmentId`)
+    // EmoSpace sends the round the admin actually has open (`targetAssessmentId`)
     // so a correction always lands on THAT round — without this, "join the
     // existing round" fell back to "whichever round is newest for this
     // name," which silently patched the wrong round whenever staff were
@@ -117,7 +117,7 @@ export async function POST(req: Request) {
       } catch {
         return NextResponse.json({ error: "targetAssessmentId must be a number." }, { status: 400 });
       }
-      // Staff can have Client A open in Workspace and, by mistake, pick a
+      // Staff can have Client A open in EmoSpace and, by mistake, pick a
       // file for Client B — targetAssessmentId alone can't catch that (it's
       // just "whichever round was open," not a promise the file matches).
       // When the PDF's own page names its owner and it DOESN'T match the
@@ -280,7 +280,7 @@ export async function POST(req: Request) {
       mergedIntoExisting: joinedExistingRound,
       newRoundCreated: existing !== null && !joinedExistingRound,
       // Set when this upload didn't match whichever client was open in
-      // Workspace and got automatically routed to the right one instead —
+      // EmoSpace and got automatically routed to the right one instead —
       // the UI shows this so it's obvious the data didn't just land wherever
       // was on screen.
       redirectedFrom,

@@ -3,7 +3,7 @@ import { prisma } from "./db";
 
 // Shared by app/api/webhooks/quantemo-order (automatic, needs EmoWave
 // deployed with a public URL Quantemo's Supabase can reach) and
-// app/api/quantemo-orders (manual "+ Add to Workspace" button, works today
+// app/api/quantemo-orders (manual "+ Add to EmoSpace" button, works today
 // even from localhost since it's EmoWave reaching OUT to Quantemo, not the
 // other way around) — same exact logic either way, just triggered
 // differently, so there's one tested path instead of two.
@@ -86,7 +86,7 @@ async function loadSubject(
  * says which report was bought. Anything unrecognised falls back to the
  * overview rather than refusing the purchase — a new SKU appearing in the
  * store shouldn't strand a paying customer; staff can still send the right
- * report by hand, and the unknown SKU shows up in the workspace.
+ * report by hand, and the unknown SKU shows up in EmoSpace.
  */
 export const REPORT_SLUG_BY_SKU: Record<string, string> = {
   "EMOWAVE-OVERVIEW": "overview",
@@ -108,7 +108,7 @@ export type ProcessOrderResult = { ok: true; assessmentId: string; created: bool
  * Turns one paid, EmoWave-collection Quantemo order into an EmoWave
  * Client + Assessment (a "round"), or finds the one that already exists for
  * it. Idempotent on Assessment.quantemoOrderId — safe to call twice for the
- * same order (webhook redelivery, or someone clicking "Add to Workspace"
+ * same order (webhook redelivery, or someone clicking "Add to EmoSpace"
  * on an order that quietly got added a moment earlier).
  */
 export async function processQuantemoOrder(order: QuantemoOrder): Promise<ProcessOrderResult> {
@@ -250,6 +250,31 @@ export async function processQuantemoOrder(order: QuantemoOrder): Promise<Proces
   // Only fill in a blank — never replace a round's original order.
   if (targetRound && targetRound.quantemoOrderId === null) {
     await prisma.assessment.update({ where: { id: targetRound.id }, data: { quantemoOrderId: order.id } });
+  }
+
+  // A PURCHASE is the third thing that can make a report deliverable, and it
+  // was the missing one. Auto-delivery already fires when an upload or a copy
+  // completes a round (see the EmoSpace page), which covers the customer who
+  // buys before their PDFs are in. It did not cover the opposite and far more
+  // common case: someone coming back weeks later to buy a second report
+  // against a round that is ALREADY complete. Nothing changed about the data,
+  // so nothing triggered — and the report sat undelivered indefinitely.
+  //
+  // Cheap in the normal case: autoDeliverPurchasedReports only renders when a
+  // report is genuinely owed. An empty round is held by the gap check, and
+  // anything already sent since it was bought is skipped, so the sync loop
+  // pays a couple of queries per order rather than a Puppeteer render.
+  //
+  // Never allowed to fail the import. The purchase is recorded above and is
+  // the thing that must not be lost; a delivery that fails here is picked up
+  // by the next upload, copy, or a manual Deliver.
+  try {
+    const { autoDeliverPurchasedReports } = await import("./autoDeliver");
+    const result = await autoDeliverPurchasedReports(assessment.id);
+    const sent = result.outcomes.filter((o) => o.status === "sent").map((o) => o.slug);
+    if (sent.length > 0) console.log(`Quantemo order ${order.id} -> auto-delivered ${sent.join(", ")} for assessment ${assessment.id}`);
+  } catch (err) {
+    console.error(`Auto-delivery after Quantemo order ${order.id} failed (purchase was still recorded):`, err);
   }
 
   return { ok: true, assessmentId: assessment.id.toString(), created: !targetRound };

@@ -1,9 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import MindMapView from "@/components/MindMapView";
 import { studioTool, type StudioTool, type StudioToolKind, type StudioLength } from "@/lib/studioOptions";
+// Type-only: lib/autoDeliver pulls in Prisma and Puppeteer, so this must
+// never become a value import or it drags the server bundle into the client.
+import type { AutoDeliverResult } from "@/lib/autoDeliver";
 
 type AssessmentSummary = { id: string; clientId: string | null; customerId: string; factCount: number; createdAt: string };
 type Source = { sourceReport: string; fieldCount: number };
@@ -189,7 +192,7 @@ function ToolTile({
   );
 }
 
-export default function WorkspacePage() {
+function WorkspaceView() {
   const searchParams = useSearchParams();
   const deepLinkId = searchParams.get("id") ?? "";
   const [assessments, setAssessments] = useState<AssessmentSummary[]>([]);
@@ -198,6 +201,12 @@ export default function WorkspacePage() {
   const [sources, setSources] = useState<Source[]>([]);
   const [loadingSources, setLoadingSources] = useState(false);
   const [sourcesError, setSourcesError] = useState("");
+  // Copying an earlier round's facts into this empty one (see
+  // /api/assessments/[id]/copy-facts) — which round was picked, and whether
+  // the copy is in flight.
+  const [copyFrom, setCopyFrom] = useState("");
+  const [copyingFacts, setCopyingFacts] = useState(false);
+  const [copyError, setCopyError] = useState("");
 
   const [files, setFiles] = useState<File[]>([]);
   const [uploading, setUploading] = useState(false);
@@ -208,6 +217,12 @@ export default function WorkspacePage() {
   // Staff check this only when the upload is genuinely a new round (e.g. a
   // manually re-administered assessment outside the Quantemo purchase flow).
   const [newRound, setNewRound] = useState(false);
+  // Outcome of the automatic post-upload send (see /api/auto-deliver). Shown
+  // in the upload results rather than left silent: the whole point is that
+  // nobody clicked Deliver, so this is the only place staff find out a report
+  // reached the customer — or that it was held back over a gap.
+  const [autoDeliver, setAutoDeliver] = useState<AutoDeliverResult | null>(null);
+  const [autoDelivering, setAutoDelivering] = useState(false);
 
   // Sending the report to Quantemo is the one action here that writes to a
   // customer's account rather than to EmoWave's own data, so it reports its
@@ -393,6 +408,8 @@ export default function WorkspacePage() {
   useEffect(() => {
     setTurns([]);
     setChatError("");
+    setCopyFrom("");
+    setCopyError("");
     if (selectedId) loadSources(selectedId);
     else setSources([]);
   }, [selectedId]);
@@ -440,6 +457,7 @@ export default function WorkspacePage() {
     if (files.length === 0) return;
     setUploading(true);
     setUploadResults([]);
+    setAutoDeliver(null);
     setUploadProgress({ done: 0, total: files.length });
 
     const collected: ExtractResult[] = [];
@@ -486,6 +504,108 @@ export default function WorkspacePage() {
     setNewRound(false);
     await loadAssessments(lastAssessmentId ?? selectedId);
     if (lastAssessmentId) loadSources(lastAssessmentId);
+
+    // The batch is extracted — now send whatever this round's customer paid
+    // for, without anyone clicking Deliver. Runs here rather than inside
+    // /api/extract-facts so the gap check sees the COMPLETE round: per-file,
+    // a three-source round would be judged on the first file alone.
+    //
+    // Only for a round that actually took data. A batch where every file
+    // failed changed nothing, so there's nothing new to send.
+    const target = lastAssessmentId ?? selectedId;
+    if (target && collected.some((r) => r.ok)) await runAutoDeliver(target);
+  }
+
+  /**
+   * Asks /api/auto-deliver to send whatever this round's customer paid for.
+   *
+   * Shared by both paths that can complete a round: finishing an upload
+   * batch, and copying an earlier round's facts onto an empty one. The copy
+   * path matters as much as the upload — a repeat purchase arrives empty and
+   * is filled by copying, never by uploading, so leaving it out meant the
+   * automatic send simply never fired for the most common case it was built
+   * for.
+   */
+  /**
+   * The outcome of an automatic send, rendered wherever one can be triggered
+   * from — the upload modal and the Sources panel's copy control. Shared
+   * because nobody clicked Deliver, so whichever surface the staff member is
+   * looking at is the only place they find out a report reached a customer.
+   */
+  function autoDeliverBanner() {
+    if (autoDelivering)
+      return (
+        <p className="doc-meta" style={{ marginTop: 12 }}>
+          Checking what this customer has paid for…
+        </p>
+      );
+    if (!autoDeliver) return null;
+    return (
+      <div style={{ marginTop: 12 }}>
+        {autoDeliver.outcomes
+          .filter((o) => o.status === "sent")
+          .map((o) => (
+            <p key={o.slug} className="doc-meta" style={{ margin: "2px 0", color: "var(--success)" }}>
+              ✓ Sent {REPORT_LABELS[o.slug] ?? o.slug} to the customer&apos;s My Reports — no click needed.
+            </p>
+          ))}
+        {autoDeliver.outcomes
+          .filter((o) => o.status === "failed")
+          .map((o) => (
+            <p key={o.slug} className="doc-meta" style={{ margin: "2px 0", color: "var(--danger)" }}>
+              ⚠ Couldn&apos;t send {REPORT_LABELS[o.slug] ?? o.slug}: {"reason" in o ? o.reason : ""} — send it by hand.
+            </p>
+          ))}
+        {/* Gaps are the deliberate stop. Listing them rather than just saying
+            "held back" means the fix is visible without opening a preview. */}
+        {autoDeliver.warnings.length > 0 && (
+          <>
+            <p className="doc-meta" style={{ margin: "2px 0", color: "var(--warning, #d9832b)" }}>
+              ⚠ Not sent automatically — {autoDeliver.reason}
+            </p>
+            {autoDeliver.warnings.map((w, i) => (
+              <p key={i} className="doc-meta" style={{ margin: "2px 0 2px 14px", color: "var(--warning, #d9832b)" }}>
+                • {w}
+              </p>
+            ))}
+          </>
+        )}
+        {!autoDeliver.attempted && autoDeliver.warnings.length === 0 && (
+          <p className="doc-meta" style={{ margin: "2px 0" }}>
+            Nothing sent automatically — {autoDeliver.reason}
+          </p>
+        )}
+      </div>
+    );
+  }
+
+  async function runAutoDeliver(assessmentId: string) {
+    setAutoDelivering(true);
+    setAutoDeliver(null);
+    try {
+      const res = await fetch("/api/auto-deliver", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ assessmentId }),
+      });
+      const data = await res.json();
+      setAutoDeliver(
+        res.ok ? data : { attempted: false, reason: data.error ?? "Auto-delivery failed.", warnings: [], outcomes: [] },
+      );
+      // A send writes a delivered GeneratedReport row, which is what the
+      // report tiles read to show "✓ Sent" — refresh so they don't keep
+      // saying "Purchased" for something that just went out.
+      if (data.outcomes?.some((o: { status: string }) => o.status === "sent")) loadDeliveries(assessmentId);
+    } catch (err) {
+      setAutoDeliver({
+        attempted: false,
+        reason: err instanceof Error ? err.message : "Auto-delivery failed.",
+        warnings: [],
+        outcomes: [],
+      });
+    } finally {
+      setAutoDelivering(false);
+    }
   }
 
   async function send() {
@@ -544,6 +664,86 @@ export default function WorkspacePage() {
     return [...group].reverse(); // oldest-first storage -> newest-first display
   })();
 
+  // Every round anywhere that carries facts — this client's first, then
+  // everyone else's. Cross-client copying is allowed (the API takes an
+  // explicit crossClient flag for it), but a borrowed round is invisible
+  // afterwards, so the same-client candidates are grouped and offered first
+  // rather than being buried alphabetically among other people's.
+  const factSourceRounds = (() => {
+    if (!selected) return { own: [], others: [] };
+    const withFacts = assessments
+      .filter((a) => a.id !== selected.id && a.factCount > 0)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    const sameClient = (a: AssessmentSummary) => !!selected.clientId && a.clientId === selected.clientId;
+    return { own: withFacts.filter(sameClient), others: withFacts.filter((a) => !sameClient(a)) };
+  })();
+  const hasFactSources = factSourceRounds.own.length + factSourceRounds.others.length > 0;
+  // Which of the two groups the picked round came from, so the confirm below
+  // knows whether this is a cross-person copy without re-deriving it.
+  const copyFromIsOtherClient = factSourceRounds.others.some((a) => a.id === copyFrom);
+
+  // The version label the picker shows for a round ("v7"), so the copy
+  // control speaks the same language as the switcher beside it rather than
+  // exposing raw assessment ids.
+  const roundLabel = (id: string) => {
+    const group = clientGroups.find((g) => g.some((a) => a.id === id));
+    if (!group) return "this round";
+    return `v${group.findIndex((a) => a.id === id) + 1}`;
+  };
+
+  async function handleCopyFacts() {
+    if (!selectedId || !copyFrom) return;
+
+    // Both confirms happen BEFORE the request, so the flags the API demands
+    // are only ever sent by someone who read what they mean. The API refuses
+    // without them regardless — this is the human half of that contract.
+    const sourceRound = assessments.find((a) => a.id === copyFrom);
+    if (
+      copyFromIsOtherClient &&
+      !confirm(
+        `"${sourceRound?.customerId ?? "That round"}" is a different client from "${selected?.customerId ?? "this one"}".\n\n` +
+          "Their assessment data will be filed under this person and will look extracted, not borrowed — " +
+          "including to the chat, to every report, and to automatic delivery.\n\nCopy anyway?",
+      )
+    )
+      return;
+    // Replacing destroys real extracted facts, which no upload brings back
+    // without re-running extraction on the original PDFs.
+    if (
+      sources.length > 0 &&
+      !confirm(`This round already has ${sources.reduce((n, s) => n + s.fieldCount, 0)} fields. Delete them and replace with the copy?`)
+    )
+      return;
+
+    setCopyingFacts(true);
+    setCopyError("");
+    try {
+      const res = await fetch(`/api/assessments/${selectedId}/copy-facts`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ from: copyFrom, crossClient: copyFromIsOtherClient, replace: sources.length > 0 }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(data?.error || `Copy failed (HTTP ${res.status}).`);
+      // Both lists move: the Sources panel gains the copied reports, and the
+      // dropdown's own fact counts are what decide whether this control
+      // should still be offered at all.
+      loadSources(selectedId);
+      loadAssessments();
+      setCopyFrom("");
+      setCopyingFacts(false);
+      // The round is now complete by the same measure an upload leaves it, so
+      // it gets the same automatic send. This is the path a repeat purchase
+      // actually takes — it arrives empty and is filled by copying, not by
+      // uploading — so without this the automatic send never fires for it.
+      await runAutoDeliver(selectedId);
+    } catch (err) {
+      setCopyError(err instanceof Error ? err.message : "Copy failed.");
+    } finally {
+      setCopyingFacts(false);
+    }
+  }
+
   // "v2 of 3" for whatever round is currently open — null when that client
   // only has this one round, since a version count of "1 of 1" would just be
   // noise rather than useful context.
@@ -581,11 +781,12 @@ export default function WorkspacePage() {
     };
   }, []);
 
-  useEffect(() => {
-    setDeliveredSlugs(new Set());
-    setDeliverResult(null);
-    if (!selectedId) return;
-    fetch(`/api/deliver-report?assessmentId=${selectedId}`)
+  // Named rather than inline in the effect below because an automatic send
+  // has to be able to re-run it: the report tiles read this to decide
+  // "Purchased" vs "✓ Sent", and after auto-delivery that answer has changed
+  // without the selected round changing.
+  function loadDeliveries(id: string) {
+    fetch(`/api/deliver-report?assessmentId=${id}`)
       .then((r) => (r.ok ? r.json() : { delivered: [] }))
       .then((d) => {
         setDeliveredSlugs(new Set((d.delivered ?? []).map((x: { variant: string }) => x.variant)));
@@ -597,6 +798,14 @@ export default function WorkspacePage() {
         setDeliveries([]);
         setPurchases([]);
       });
+  }
+
+  useEffect(() => {
+    setDeliveredSlugs(new Set());
+    setDeliverResult(null);
+    if (!selectedId) return;
+    loadDeliveries(selectedId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedId]);
 
   // theme wins over variant: "career"/"relationship" are themed EmoWave
@@ -681,7 +890,7 @@ export default function WorkspacePage() {
 
   return (
     <div className="container wide">
-      <h1>Workspace</h1>
+      <h1>EmoSpace</h1>
       <p className="subtitle" style={{ marginBottom: 18 }}>
         Everything for one client in one place — pick or create a client below, then upload, chat, and generate reports without leaving
         this page.
@@ -795,6 +1004,64 @@ export default function WorkspacePage() {
                 </div>
               </div>
             ))}
+          {/* Offered on every round, not just an empty one: a repeat purchase
+              arrives empty and wants the earlier round's facts, but staff also
+              need to replace a bad extraction without re-uploading. On a round
+              that already has sources this REPLACES them, which is why the
+              button says so and handleCopyFacts confirms twice. */}
+          {selectedId && !loadingSources && !sourcesError && hasFactSources && (
+            <div className="copy-facts">
+              <p className="copy-facts-lead">
+                {sources.length > 0 ? "Or replace these with another round’s facts:" : "Or reuse an earlier round’s facts:"}
+              </p>
+              <div className="copy-facts-row">
+                <select
+                  value={copyFrom}
+                  onChange={(e) => setCopyFrom(e.target.value)}
+                  disabled={copyingFacts}
+                  aria-label="Round to copy facts from"
+                >
+                  <option value="">Choose a round…</option>
+                  {/* Two groups rather than one flat list: same-person rounds
+                      are the safe, ordinary case and other people's are the
+                      exception, so the browser's own optgroup labelling is
+                      what keeps them from being picked by accident. */}
+                  {factSourceRounds.own.length > 0 && (
+                    <optgroup label="This client">
+                      {factSourceRounds.own.map((a) => (
+                        <option key={a.id} value={a.id}>
+                          {roundLabel(a.id)} · {a.factCount} facts · {new Date(a.createdAt).toLocaleDateString()}
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                  {factSourceRounds.others.length > 0 && (
+                    <optgroup label="Other clients — copies their data">
+                      {factSourceRounds.others.map((a) => (
+                        <option key={a.id} value={a.id}>
+                          {a.customerId} · {a.factCount} facts · {new Date(a.createdAt).toLocaleDateString()}
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                </select>
+                <button className="btn-secondary" onClick={handleCopyFacts} disabled={!copyFrom || copyingFacts}>
+                  {copyingFacts ? "Copying…" : sources.length > 0 ? "Replace" : "Copy"}
+                </button>
+              </div>
+              {/* Named before the click, not only inside the confirm dialog —
+                  the whole risk of this control is that a borrowed round looks
+                  identical to an extracted one once it lands. */}
+              {copyFromIsOtherClient && (
+                <p className="doc-meta" style={{ margin: "6px 0 0", color: "var(--warning, #d9832b)" }}>
+                  ⚠ That round belongs to a different client. Their assessment data will be filed under{" "}
+                  {selected?.customerId ?? "this client"} and won&rsquo;t be marked as borrowed.
+                </p>
+              )}
+              {copyError && <p className="error">⚠ {copyError}</p>}
+              {autoDeliverBanner()}
+            </div>
+          )}
         </div>
 
         {/* Chat */}
@@ -1067,6 +1334,7 @@ export default function WorkspacePage() {
                 ))}
               </div>
             )}
+            {autoDeliverBanner()}
           </div>
         </div>
       )}
@@ -1256,5 +1524,17 @@ export default function WorkspacePage() {
         </div>
       )}
     </div>
+  );
+}
+
+// useSearchParams() opts a page out of static prerendering unless it sits
+// under a Suspense boundary — without one, `next build` fails the whole
+// export rather than degrading. The boundary is what lets Next ship the
+// static shell and fill the URL-dependent part in on the client.
+export default function WorkspacePage() {
+  return (
+    <Suspense fallback={<p className="empty">Loading EmoSpace…</p>}>
+      <WorkspaceView />
+    </Suspense>
   );
 }

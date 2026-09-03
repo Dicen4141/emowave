@@ -6,7 +6,7 @@ export const runtime = "nodejs";
 
 // Fast, non-rendering companion to /api/generate-report — lists data gaps
 // (e.g. "no Journey Overview data") without generating the actual PDF, so
-// the Workspace preview can show a warning banner before the user opens a
+// the EmoSpace preview can show a warning banner before the user opens a
 // report that's missing something, instead of them having to notice it by
 // reading through the whole thing.
 export async function GET(req: Request) {

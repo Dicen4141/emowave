@@ -7,7 +7,7 @@ import { createClient } from "@/lib/supabase/client";
 import { isAuthPath } from "@/lib/authPaths";
 
 const LINKS = [
-  { href: "/admin/workspace", label: "Workspace" },
+  { href: "/admin/workspace", label: "EmoSpace" },
   { href: "/admin/facts", label: "Manage Facts" },
 ];
 
@@ -75,6 +75,15 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           </Link>
         ))}
         <div className="nav-right">
+          {/* A form POST, not a <Link> or <a> — the route it hits mints a
+              single-use sign-in link, and a GET would let the browser (or
+              Next's own prefetch) burn one without anybody clicking. Opens
+              in a new tab so the EmoSpace you were mid-task in survives. */}
+          <form action="/api/auth/quantemo-jump" method="post" target="_blank" className="nav-jump">
+            <button type="submit" className="nav-link" title="Open Quantemo, signed in as this account">
+              Quantemo ↗
+            </button>
+          </form>
           {email && <span className="nav-user">{email}</span>}
           <button type="button" className="btn-secondary nav-signout" onClick={handleSignOut} disabled={signingOut}>
             {signingOut ? "Signing out…" : "Sign out"}

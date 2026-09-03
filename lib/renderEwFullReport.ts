@@ -48,7 +48,7 @@ function factOrNull(facts: ReportFact[], label: string): string | null {
 // trailing "?" becomes a full stop. Display-only: ReportFact and
 // TopAttributeContent keep the vendor's exact wording, so the admin side
 // (Manage Facts) still shows the original.
-function asStatement(text: string): string {
+export function asStatement(text: string): string {
   return text.replace(/\s*\?\s*$/, ".");
 }
 
@@ -265,7 +265,7 @@ export function parseCharacterNumber(label: string): number | null {
 // both sides the same way before matching so those near-miss variants still
 // resolve to the vendor's real description instead of silently falling
 // through to Gemini.
-function normalizeAttrLabel(s: string): string {
+export function normalizeAttrLabel(s: string): string {
   return s
     .trim()
     .toLowerCase()

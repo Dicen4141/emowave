@@ -10,7 +10,7 @@ export const runtime = "nodejs";
 //
 // Needs EmoWave deployed with a real public URL — Quantemo's Supabase
 // servers can't reach "localhost". Until then, use the manual "+ Add to
-// Workspace" button on the Clients page instead (app/api/quantemo-orders),
+// EmoSpace" button on the Clients page instead (app/api/quantemo-orders),
 // which does the exact same thing via processQuantemoOrder() but doesn't
 // need Quantemo to be able to call EmoWave.
 type OrderWebhookPayload = {

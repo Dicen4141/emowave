@@ -3,6 +3,7 @@ import { prisma } from "./db";
 import { renderEwFullReportHtml } from "./renderEwFullReport";
 import { renderReportHtml, htmlToPdf } from "./renderReportPdf";
 import { renderFwmReportHtml, fwmPdfChrome } from "./renderFwmReport";
+import { buildDeliveryKnowledgeBase, EMPTY_KNOWLEDGE_BASE } from "./knowledgeBase";
 
 // Pushing a finished report back to Quantemo so the person who paid for it
 // can download it from their "My Reports" page. EmoWave owns three of the
@@ -216,6 +217,36 @@ export async function deliverReportToQuantemo(
     .eq("payload->>slug", slug)
     .maybeSingle();
 
+  // The knowledge base Quantemo's own report chat answers from, plus the
+  // rules it must answer under. Both ride in `payload` beside the PDF rather
+  // than in new columns, for the same reason pdf_path does: no migration on
+  // their side, and their existing rows (payload null) are untouched.
+  //
+  // Built from THIS project's clean data — the same buildClientHistorySummary()
+  // the EmoSpace chat uses — never scraped back out of the rendered
+  // PDF. A PDF round-trip would hand them text with page furniture, broken
+  // wrapping and chart labels in it, and would silently lose every field the
+  // layout doesn't print.
+  //
+  // Every round for this client goes in, each tagged CURRENT/PREVIOUS with
+  // its own date (see buildClientHistorySummary). That is deliberate: it is
+  // what makes "how have I changed?" answerable, and it means one delivered
+  // report ships the person's whole assessment history, not just the round
+  // that was bought.
+  //
+  // Failure here must not fail the delivery. The PDF is already uploaded and
+  // is what the customer paid for; a missing knowledge base costs them a chat
+  // feature, not their report. Quantemo already treats chat_prompt as
+  // optional and falls back to its own guardrails.
+  let knowledgeBase = EMPTY_KNOWLEDGE_BASE;
+  try {
+    // Scoped to THIS row's report, so the Financial row carries the FWM
+    // sections and an EmoWave row does not.
+    knowledgeBase = await buildDeliveryKnowledgeBase(assessment.id, slug);
+  } catch (err) {
+    console.error(`Knowledge base for assessment ${assessment.id} could not be built; delivering without it:`, err);
+  }
+
   const payload = {
     source: PAYLOAD_SOURCE,
     slug,
@@ -224,6 +255,11 @@ export async function deliverReportToQuantemo(
     assessment_id: assessment.id.toString(),
     variant,
     delivered_at: new Date().toISOString(),
+    // Per-row rather than per-round: the text describes the PERSON, so every
+    // variant's row carries the same copy. ~15KB each, which is nothing in
+    // jsonb, and it keeps each row self-contained — Quantemo reads whichever
+    // report the customer opened without having to join across the others.
+    ...knowledgeBase,
   };
 
   // user_id stays the BUYER so they never lose access to something they paid

@@ -4,8 +4,10 @@ import { fwmOverviewParagraphs } from "./fwmOverview";
 import { PROSE_MODEL } from "./gemini";
 import { REPORT_FONT_FACES } from "./reportFonts";
 import {
+  asStatement,
   escapeHtml,
   fact,
+  normalizeAttrLabel,
   normalizeNote,
   parseCharacterNumber,
   parseNinePointsTypes,
@@ -125,9 +127,12 @@ type Group = { title: string; blurb: string; blocks: Block[] };
 const BLOCK_FLOW_CHARS = 600;
 
 function blockHtml(b: Block): string {
+  // A blank title means the group heading immediately above already names
+  // this block; repeating it as an <h4> prints the same words twice.
+  const heading = b.title ? `<h4>${escapeHtml(b.title)}</h4>` : "";
   if (!b.body.trim()) {
     return `<div class="fwm-block fwm-gap">
-      <h4>${escapeHtml(b.title)}</h4>
+      ${heading}
       <p class="fwm-gap-msg">Not included in this report.</p>
       <div class="fwm-src">${escapeHtml(b.source)}</div>
     </div>`;
@@ -140,7 +145,7 @@ function blockHtml(b: Block): string {
     .join("");
   const flow = b.body.length > BLOCK_FLOW_CHARS ? " fwm-block--flow" : "";
   return `<div class="fwm-block${flow}">
-    <h4>${escapeHtml(b.title)}</h4>
+    ${heading}
     ${paras}
     ${b.note ? `<p class="fwm-note">${escapeHtml(b.note)}</p>` : ""}
     <div class="fwm-src">${escapeHtml(b.source)}</div>
@@ -149,18 +154,32 @@ function blockHtml(b: Block): string {
 
 function groupHtml(g: Group): string {
   return `<div class="fwm-group">
-    <div class="group-head">
+    ${
+      // A blank title is a group that carries blocks but no heading of its
+      // own — printing an empty <h3> would still cost its margin and its
+      // break-after:avoid, wiring the next block to nothing.
+      g.title
+        ? `<div class="group-head">
       <h3>${escapeHtml(g.title)}</h3>
       ${g.blurb ? `<p class="fwm-group-blurb">${escapeHtml(g.blurb)}</p>` : ""}
-    </div>
+    </div>`
+        : ""
+    }
     ${g.blocks.map(blockHtml).join("")}
   </div>`;
 }
 
-export async function renderFwmReportHtml(
-  assessment: AssessmentWithFacts,
-  refreshOverview = false,
-): Promise<string> {
+/**
+ * Resolves every value the FWM report is built from and assembles its three
+ * section groups (MHA / EMA / ENV).
+ *
+ * Split out of renderFwmReportHtml so the knowledge base shipped to Quantemo
+ * (lib/fwmKnowledge.ts) is built from the SAME groups the PDF renders, rather
+ * than a second hand-written mapping of the same reference tables. A parallel
+ * mapping is exactly how the chat ends up describing a section the report
+ * does not have, or missing one it does.
+ */
+export async function buildFwmGroups(assessment: AssessmentWithFacts) {
   const facts: ReportFact[] = assessment.facts;
 
   // ---- Resolve this client's seven lookup keys -----------------------------
@@ -189,7 +208,7 @@ export async function renderFwmReportHtml(
   const coreEmotion = fact(facts, "Core Emotion") || fact(facts, "Core Emotion (Mind Report)");
 
   // ---- Fetch every reference row in one round trip -------------------------
-  const [stress, present, real, comm, decision, noteCombo, emotionRefs] = await Promise.all([
+  const [stress, present, real, comm, decision, noteCombo, emotionRefs, attributeRefs] = await Promise.all([
     Number.isFinite(stressScore)
       ? prisma.fwmStressRange.findFirst({ where: { stressFrom: { lte: stressScore }, stressTo: { gt: stressScore } } })
       : null,
@@ -203,6 +222,12 @@ export async function renderFwmReportHtml(
     // and columns, so duplicating it into an fwm_* table would just create a
     // second copy to keep in sync.
     prisma.emotionCodeReference.findMany(),
+    // Empowering/disempowering descriptions, same table and same reason: the
+    // FWM workbook ships no attribute sheet of its own, and this client's top
+    // 5 are already resolved against Data-Empower and Disempower.xlsx for the
+    // EmoWave Full report. Reading the same rows here keeps the two reports
+    // from describing one attribute two different ways.
+    prisma.attributeCodeReference.findMany(),
   ]);
 
   // Keyed by character NAME rather than type number, so it has to wait for the
@@ -396,12 +421,91 @@ export async function renderFwmReportHtml(
         { title: "Financial Choice", body: decision?.financialChoice ?? "", source: `${S_DECIDE} → "Financial Choice"` },
       ],
     },
+  ];
+
+  // ---- Environmental Factors -----------------------------------------------
+  // The vendor's template names this section but ships no sheet for it, so it
+  // printed as a gap. What fills it is this client's own top 5 empowering /
+  // disempowering attributes: the same TopAttributeContent rows the EmoWave
+  // Full report tabulates, resolved through the same reference table, so the
+  // two reports can't describe one attribute two different ways.
+  //
+  // "constructive"/"restrictive" is what the column is called in the database
+  // (and in the Full report's own headings); the FWM template's vocabulary for
+  // the same two lists is empowering / disempowering, which is what prints here.
+  const attrByNormalizedHeader = new Map(attributeRefs.filter((a) => a.header).map((a) => [normalizeAttrLabel(a.header!), a]));
+
+  /**
+   * This client's top 5 of one kind, in rank order. Reads the precomputed
+   * TopAttributeContent rows first (written at upload time), falling back to
+   * raw ReportFact for clients uploaded before that table existed — the same
+   * two-step the EmoWave Full report uses.
+   *
+   * The reference table's own description wins over the stored one when the
+   * label matches a row, and its header replaces the label so the wording is
+   * the vendor's rather than whichever report the label was extracted from.
+   */
+  function topAttributes(kind: "constructive" | "restrictive", factLabel: string) {
+    let rows = assessment.topAttributeContent
+      .filter((r) => r.kind === kind)
+      .sort((a, b) => a.rank - b.rank)
+      .map((r) => ({ label: r.label, desc: r.description }));
+    if (rows.length === 0) {
+      rows = [1, 2, 3, 4, 5]
+        .map((n) => ({ label: fact(facts, `${factLabel} ${n}`), desc: fact(facts, `${factLabel} ${n} - description`) }))
+        .filter((r) => r.label);
+    }
+    return rows.slice(0, 5).map((r) => {
+      const ref = attrByNormalizedHeader.get(normalizeAttrLabel(r.label));
+      return { label: asStatement(ref?.header || r.label), desc: ref?.description || r.desc };
+    });
+  }
+
+  const empowering = topAttributes("constructive", "Constructive Attribute");
+  const disempowering = topAttributes("restrictive", "Restrictive Attribute");
+
+  const S_ATTR = "Data-Empower and Disempower → \"Header\" + \"Description\"";
+
+  /** One group of five, numbered so the ranking survives as prose blocks. */
+  function attrGroup(title: string, blurb: string, rows: { label: string; desc: string }[]): Group {
+    return {
+      title,
+      blurb,
+      blocks: rows.length
+        ? rows.map((r, i) => ({ title: `${i + 1}. ${r.label}`, body: r.desc, source: S_ATTR }))
+        : // One gap block rather than five: the whole list is missing together
+          // or not at all, and five identical "Not included" rules is noise.
+          [{ title, body: "", source: "No top-5 attributes extracted for this client" }],
+    };
+  }
+
+  const env: Group[] = [
+    // Blurbs are the EmoWave Full report's own wording for these same two
+    // tables, verbatim — a client who holds both reports reads one description
+    // of what their top 5 mean, not two.
+    attrGroup(
+      "Top 5 Empowering Attributes",
+      "You are consciously aware of these attributes; you are aware that the action you take will empower you to " +
+        "create possibilities. These are the areas where you feel positive with high energy.",
+      empowering,
+    ),
+    attrGroup(
+      "Top 5 Disempowering Attributes",
+      "Past incidents could be a block to your present actions. These are the areas that potentially trigger some " +
+        "unpleasant memories and they will shape your behaviour in line with your thoughts.",
+      disempowering,
+    ),
+    // The section's own named topic, still unsupplied by any workbook. Kept
+    // below the two lists rather than dropped: the template asks for it by
+    // name, and a marked gap is the report saying so — silently omitting it
+    // would read as though nothing were missing. A group rather than a bare
+    // block so its heading sits at the same level as the two lists above it.
     {
       title: "Environmental Factors",
       blurb: "Tracking how the current financial environment influences the client's emotional state in real-time.",
       blocks: [
         {
-          title: "Environmental Factors",
+          title: "",
           body: "",
           source: "No source sheet — specified in the template but not supplied by any workbook",
         },
@@ -439,9 +543,18 @@ export async function renderFwmReportHtml(
     `emotion codes ${[freqRow?.code, coreRow?.code].filter(Boolean).join("/") || "none"}`,
   ].join(" · ");
 
+  return { mha, ema, env, profileRows, lookupKeys };
+}
+
+export async function renderFwmReportHtml(
+  assessment: AssessmentWithFacts,
+  refreshOverview = false,
+): Promise<string> {
+  const { mha, ema, env, profileRows, lookupKeys } = await buildFwmGroups(assessment);
+
   const generatedOn = reportDate();
   const reportNo = await clientRoundNo(assessment);
-  const overview = await fwmOverviewParagraphs(assessment, [...mha, ...ema], refreshOverview);
+  const overview = await fwmOverviewParagraphs(assessment, [...mha, ...ema, ...env], refreshOverview);
 
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
@@ -604,15 +717,25 @@ ${REPORT_FONT_FACES}
     </div>
     ${ema.map(groupHtml).join("")}
   </section>
+
+  <section>
+    <div class="section-head">
+      <h2><span class="num">03</span>Environmental Factors</h2>
+      <p class="section-blurb">Tracking how the current financial environment influences the client's
+      emotional state in real-time.</p>
+    </div>
+    ${env.map(groupHtml).join("")}
+  </section>
 </main>
 <footer>
   <p>This report describes emotional and behavioural patterns. It is not medical, psychological,
   financial, or legal advice, and should not be treated as a diagnosis or as a recommendation to
   buy, sell, or hold anything.</p>
-  <p>Section order and nesting follow v1.0-Emowave-FWM Report.docx. Every section below the opening
-  overview is read verbatim from the vendor's FWM reference tables; the opening overview is the one
-  AI-composed part, written from those same sections. Sections the vendor's tables hold no row for
-  are marked "Not included in this report."</p>
+  <p>Section order and wording follow v1.0-Emowave-FWM Report.docx, which names Environmental Factors
+  but supplies no sheet for it; that section is carried here as 03, opening with this client's top 5
+  empowering / disempowering attributes and keeping the unsupplied block itself marked below them. Every section below the opening overview is read verbatim from
+  the vendor's reference tables; the opening overview is the one AI-composed part, written from those
+  same sections. Sections the vendor's tables hold no row for are marked "Not included in this report."</p>
 </footer>
 </body></html>`;
 }

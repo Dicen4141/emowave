@@ -346,13 +346,27 @@ export type PdfChrome = {
   margin?: { top?: string; bottom?: string; left?: string; right?: string };
 };
 
-export async function htmlToPdf(html: string, chrome?: PdfChrome): Promise<Buffer> {
+// Uint8Array rather than Buffer: it is what page.pdf() already returns, it is
+// a valid BodyInit so a route can hand it straight back, and Supabase storage
+// takes it as-is. Buffer.from() only copied the whole PDF to gain nothing, and
+// a Buffer is not assignable to BodyInit under current @types/node anyway.
+//
+// The <ArrayBuffer> parameter is load-bearing, not decoration: the DOM lib
+// defines BufferSource as ArrayBufferView<ArrayBuffer>, so the bare
+// Uint8Array<ArrayBufferLike> Puppeteer declares — which admits a
+// SharedArrayBuffer backing — is rejected as a response body. Chrome's PDF
+// bytes are never shared-backed, so the narrowing at the return is sound.
+export async function htmlToPdf(html: string, chrome?: PdfChrome): Promise<Uint8Array<ArrayBuffer>> {
   const browser = await puppeteer.launch({ headless: true });
   try {
     const page = await browser.newPage();
-    await page.setContent(html, { waitUntil: "networkidle0" });
+    // "load", not "networkidle0" — Puppeteer's own types stopped accepting the
+    // latter for setContent, and it would buy nothing anyway: a report embeds
+    // every font and image as a data URI, so there are no network requests for
+    // an idle window to wait on. "load" already covers those inline resources.
+    await page.setContent(html, { waitUntil: "load" });
     // Wait for webfonts before snapshotting. Reports embed their faces as
-    // base64 data URIs, which are not network requests, so "networkidle0" is
+    // base64 data URIs, which are not network requests, so page load is
     // already satisfied while those faces may still be decoding. Chrome has
     // been reliable about it here, but the failure mode is silent and ugly if
     // it ever isn't: the PDF renders in a fallback face whose metrics move
@@ -368,7 +382,7 @@ export async function htmlToPdf(html: string, chrome?: PdfChrome): Promise<Buffe
         footerTemplate: chrome.footerTemplate,
       }),
     });
-    return Buffer.from(pdf);
+    return pdf as Uint8Array<ArrayBuffer>;
   } finally {
     await browser.close();
   }

@@ -19,7 +19,7 @@ function quantemoClient() {
 // reaching OUT to Quantemo to fetch the order, not Quantemo reaching in.
 //
 // Creating a client this way is the same action as "+ New client" in
-// Workspace, so it gets the same superadmin-only gate.
+// EmoSpace, so it gets the same superadmin-only gate.
 export async function POST(_req: Request, { params }: { params: Promise<{ orderId: string }> }) {
   const adminUser = await getAdminUser();
   if (adminUser?.role !== "superadmin") {

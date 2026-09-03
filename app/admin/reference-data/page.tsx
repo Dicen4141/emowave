@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { REFERENCE_TABLES, type ReferenceField } from "@/lib/referenceTables";
@@ -58,7 +58,7 @@ function editHref(tableKey: string, fields: ReferenceField[], row?: Row): string
   return `/admin/reference-data/${tableKey}/edit?${params.toString()}`;
 }
 
-export default function ReferenceDataPage() {
+function ReferenceDataView() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const tableKey = REFERENCE_TABLES.some((t) => t.key === searchParams.get("table")) ? searchParams.get("table")! : REFERENCE_TABLES[0].key;
@@ -241,5 +241,17 @@ export default function ReferenceDataPage() {
         </div>
       </div>
     </>
+  );
+}
+
+// useSearchParams() opts a page out of static prerendering unless it sits
+// under a Suspense boundary — without one, `next build` fails the whole
+// export rather than degrading. The boundary is what lets Next ship the
+// static shell and fill the URL-dependent part in on the client.
+export default function ReferenceDataPage() {
+  return (
+    <Suspense fallback={<p className="empty">Loading reference data…</p>}>
+      <ReferenceDataView />
+    </Suspense>
   );
 }

@@ -5,7 +5,7 @@ import { renderStudioArtifactHtml, renderStudioError } from "@/lib/renderStudioA
 export const runtime = "nodejs";
 
 // The viewable form of a Studio artifact — a standalone HTML document, so the
-// workspace can iframe it exactly the way it iframes a generated PDF. A route
+// EmoSpace can iframe it exactly the way it iframes a generated PDF. A route
 // handler rather than a page.tsx for the same reason /report/[id] is one: the
 // renderer returns a whole <html> document with its own styles, which would
 // be invalid nested inside app/layout.tsx's own <html>.

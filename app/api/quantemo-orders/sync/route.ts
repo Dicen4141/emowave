@@ -17,7 +17,7 @@ export async function POST() {
   const adminUser = await getAdminUser();
   // Same gate as the manual per-order import: importing creates clients.
   // Returns ok:false rather than an error status so a non-superadmin's
-  // workspace polling this quietly does nothing instead of showing a failure.
+  // EmoSpace polling this quietly does nothing instead of showing a failure.
   if (adminUser?.role !== "superadmin") {
     return NextResponse.json({ ok: false, imported: 0, reason: "not a superadmin" });
   }

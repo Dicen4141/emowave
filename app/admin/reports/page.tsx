@@ -347,7 +347,7 @@ export default function ReportsPage() {
                   <button className="btn-secondary">Mind Map</button>
                 </a>
                 <a href={`/admin/workspace?id=${selectedAssessmentId}`} target="_blank" rel="noopener noreferrer">
-                  <button className="btn-secondary">Open Workspace</button>
+                  <button className="btn-secondary">Open EmoSpace</button>
                 </a>
               </div>
             )}
