@@ -33,13 +33,23 @@ export async function GET(request: NextRequest) {
   const tokenHash = url.searchParams.get("token_hash");
   const type = (url.searchParams.get("type") ?? "magiclink") as EmailOtpType;
 
+  // Redirect targets are built by CLONING the incoming URL, the same way
+  // middleware.ts does — not with `new URL(path, url.origin)`. Behind
+  // DigitalOcean's proxy `origin` resolves to the container's own address, so
+  // that form sends the browser to https://localhost:8080/... (verified
+  // against the deployed app). Clearing `search` is what keeps the single-use
+  // token_hash from riding along into the address bar and browser history.
+  const goTo = (pathname: string, search = "") => {
+    const dest = url.clone();
+    dest.pathname = pathname;
+    dest.search = search;
+    return NextResponse.redirect(dest, { headers: { "Cache-Control": "no-store" } });
+  };
+
   // Every failure ends at the normal login form rather than an error page —
   // signing in by hand is always a valid way out of a broken jump. The reason
   // rides along as a query param for support to read off the address bar.
-  const bounce = (reason: string) =>
-    NextResponse.redirect(new URL(`/admin/login?sso=${reason}`, url.origin), {
-      headers: { "Cache-Control": "no-store" },
-    });
+  const bounce = (reason: string) => goTo("/admin/login", `?sso=${reason}`);
 
   if (!tokenHash) return bounce("missing");
 
@@ -65,7 +75,5 @@ export async function GET(request: NextRequest) {
     return bounce("norole");
   }
 
-  return NextResponse.redirect(new URL("/admin/workspace", url.origin), {
-    headers: { "Cache-Control": "no-store" },
-  });
+  return goTo("/admin/workspace");
 }
