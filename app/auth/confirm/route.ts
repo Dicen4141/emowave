@@ -33,23 +33,25 @@ export async function GET(request: NextRequest) {
   const tokenHash = url.searchParams.get("token_hash");
   const type = (url.searchParams.get("type") ?? "magiclink") as EmailOtpType;
 
-  // Redirect targets are built by CLONING the incoming URL, the same way
-  // middleware.ts does — not with `new URL(path, url.origin)`. Behind
-  // DigitalOcean's proxy `origin` resolves to the container's own address, so
-  // that form sends the browser to https://localhost:8080/... (verified
-  // against the deployed app). Clearing `search` is what keeps the single-use
-  // token_hash from riding along into the address bar and browser history.
-  const goTo = (pathname: string, search = "") => {
-    const dest = url.clone();
-    dest.pathname = pathname;
-    dest.search = search;
-    return NextResponse.redirect(dest, { headers: { "Cache-Control": "no-store" } });
-  };
+  // RELATIVE Location, deliberately — never an absolute URL built from this
+  // request. Behind DigitalOcean's proxy the host Next.js sees in a Node
+  // runtime route handler is the container's own bind address, so anything
+  // derived from it (`url.origin`, and `url.clone()` too) sends the browser to
+  // https://localhost:8080/... — verified twice against the deployed app.
+  // A relative Location sidesteps the question: the browser resolves it
+  // against the URL it actually requested, which is the public one. Dropping
+  // the query string is what keeps the single-use token_hash out of the
+  // address bar and browser history.
+  const goTo = (path: string) =>
+    new NextResponse(null, {
+      status: 303,
+      headers: { Location: path, "Cache-Control": "no-store" },
+    });
 
   // Every failure ends at the normal login form rather than an error page —
   // signing in by hand is always a valid way out of a broken jump. The reason
   // rides along as a query param for support to read off the address bar.
-  const bounce = (reason: string) => goTo("/admin/login", `?sso=${reason}`);
+  const bounce = (reason: string) => goTo(`/admin/login?sso=${reason}`);
 
   if (!tokenHash) return bounce("missing");
 
