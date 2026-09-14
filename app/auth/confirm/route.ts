@@ -64,9 +64,15 @@ export async function GET(request: NextRequest) {
 
   // Same bridge the password login runs: a Quantemo admin who has never
   // signed in here yet gets the EmoWave role granted on the way through.
-  const role = isAdminRole(data.user.app_metadata?.role)
-    ? data.user.app_metadata.role
-    : await syncQuantemoRole(data.user);
+  //
+  // Called UNCONDITIONALLY, including for someone who already holds a role.
+  // Skipping it for an existing "admin" is what kept every Quantemo super
+  // admin stuck at plain admin: the tier they were owed could only ever be
+  // granted on a first-ever sign-in, so anyone who had logged in once before
+  // the flag was read could never be upgraded. syncQuantemoRole does its own
+  // short-circuit on "superadmin" and only ever moves a role up, so there is
+  // nothing to protect against here.
+  const role = await syncQuantemoRole(data.user);
 
   // A real Supabase user without the admin role would otherwise be redirected
   // to /admin/workspace, bounced straight back by the middleware, and left

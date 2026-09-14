@@ -151,21 +151,38 @@ export async function lookupQuantemoAge(email: string): Promise<number | null> {
   return (await lookupQuantemoUser(email))?.age ?? null;
 }
 
+export type QuantemoAccess = {
+  /** Quantemo's customer tier — free/member/coach/master/grandmaster/admin. */
+  role: string | null;
+  /** Quantemo's own super-admin flag, a column SEPARATE from `role`. */
+  isSuperAdmin: boolean;
+};
+
 /**
- * Quantemo's own customer tier — free/member/coach/master/grandmaster/admin
- * — used by app/api/auth/sync-role to auto-grant EmoWave admin access to
- * anyone Quantemo already has marked "admin", instead of that needing a
- * separate manual step. This is a DIFFERENT role system from EmoWave's own
- * (Supabase Auth app_metadata.role, admin/superadmin) — the sync route is
- * what bridges the two, this is just the raw read.
+ * What Quantemo says this person is, used by lib/syncRole to mirror their
+ * access into EmoWave instead of that needing a manual create-admin.mjs run.
+ * This is a DIFFERENT role system from EmoWave's own (Supabase Auth
+ * app_metadata.role, admin/superadmin) — syncRole is what bridges the two,
+ * this is just the raw read.
+ *
+ * Two fields because Quantemo splits the idea across two columns: `role` is
+ * the tier, and `is_super_admin` is a separate boolean on top of it. Every
+ * super admin is also role="admin", so the flag is a narrowing of that group,
+ * not an alternative to it — reading only `role` (as this did originally)
+ * cannot tell a super admin apart from an ordinary admin.
  */
-export async function lookupQuantemoRole(email: string): Promise<string | null> {
+export async function lookupQuantemoAccess(email: string): Promise<QuantemoAccess | null> {
   const client = quantemoClient();
   if (!client || !email) return null;
   try {
-    const { data, error } = await client.from("users").select("role").eq("email", email).maybeSingle();
+    const { data, error } = await client
+      .from("users")
+      .select("role, is_super_admin")
+      .eq("email", email)
+      .maybeSingle();
     if (error || !data) return null;
-    return (data as { role: string | null }).role;
+    const row = data as { role: string | null; is_super_admin: boolean | null };
+    return { role: row.role, isSuperAdmin: row.is_super_admin === true };
   } catch (err) {
     console.error("Quantemo role lookup failed:", err);
     return null;
