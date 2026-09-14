@@ -76,6 +76,28 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
+  // Reference data feeds EVERY client's report, so the whole area is
+  // superadmin-only — READING included, not just editing. Hiding the nav link
+  // in app/admin/layout.tsx is cosmetic (a regular admin could simply type the
+  // URL), and the route handler only gated its writes, so until now any admin
+  // could open the page and the GET would hand back every row.
+  //
+  // Gated here rather than per-route so the page and its API can't drift apart;
+  // the handler keeps its own requireSuperadmin() on writes regardless, since
+  // this matcher is the kind of thing that gets edited later.
+  const isReferenceData = path.startsWith("/admin/reference-data") || path.startsWith("/api/reference-data");
+  if (isReferenceData && user?.app_metadata?.role !== "superadmin") {
+    // An API caller gets a status it can act on; a page request gets sent
+    // somewhere it can actually use, rather than a redirect to JSON or a
+    // bare 403 page.
+    if (path.startsWith("/api/")) {
+      return NextResponse.json({ error: "Only a superadmin can access reference data." }, { status: 403 });
+    }
+    const url = request.nextUrl.clone();
+    url.pathname = "/admin/workspace";
+    return NextResponse.redirect(url);
+  }
+
   return response;
 }
 

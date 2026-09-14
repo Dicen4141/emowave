@@ -6,13 +6,17 @@ import { referenceTable, type ReferenceTableConfig } from "@/lib/referenceTables
 export const runtime = "nodejs";
 
 // These vendor lookup tables feed EVERY client's report (not just one
-// assessment), so editing them is treated the same as adding a new client —
-// superadmin only. A regular admin can still read the app's normal report
-// data, just not touch the shared reference data behind it.
+// assessment), so they are treated the same as adding a new client —
+// superadmin only, for READING as well as editing.
+//
+// Reading used to be open to any admin. The nav hides the Reference Data link
+// from a regular admin, but hiding a link is not a gate: /admin/reference-data
+// typed straight into the address bar rendered the page, and this route filled
+// it in, so every vendor table was readable by anyone holding an admin session.
 async function requireSuperadmin() {
   const user = await getAdminUser();
   if (user?.role !== "superadmin") {
-    return NextResponse.json({ error: "Only a superadmin can edit reference data." }, { status: 403 });
+    return NextResponse.json({ error: "Only a superadmin can view or edit reference data." }, { status: 403 });
   }
   return null;
 }
@@ -133,6 +137,15 @@ function coerceBody(config: ReferenceTableConfig, body: Record<string, unknown>)
 }
 
 export async function GET(_req: Request, { params }: { params: Promise<{ table: string }> }) {
+  // Reading is superadmin-only too, not just writing. These rows are the
+  // vendor's own licensed copy behind every report, so "a regular admin can
+  // look but not touch" was the wrong line to draw — and with the nav link
+  // merely hidden, looking was one typed URL away. middleware.ts blocks the
+  // whole /api/reference-data prefix as well; this stays so the handler is
+  // safe on its own if that matcher is ever narrowed.
+  const unauthorized = await requireSuperadmin();
+  if (unauthorized) return unauthorized;
+
   const { table } = await params;
   const config = referenceTable(table);
   const delegate = delegateFor(table);
