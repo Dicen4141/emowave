@@ -5,6 +5,7 @@ import { PROSE_MODEL } from "./gemini";
 import { REPORT_FONT_FACES } from "./reportFonts";
 import {
   asStatement,
+  buildEmotionStemIndex,
   escapeHtml,
   fact,
   normalizeAttrLabel,
@@ -14,6 +15,7 @@ import {
   clientRoundNo,
   sensoryFallbackCharacter,
   splitCodeLabel,
+  stemLabel,
   type AssessmentWithFacts,
 } from "./renderEwFullReport";
 import type { PdfChrome } from "./renderReportPdf";
@@ -246,6 +248,7 @@ export async function buildFwmGroups(assessment: AssessmentWithFacts) {
   const emotionByHeader = new Map(
     emotionRefs.filter((e) => e.header).map((e) => [e.header!.trim().toLowerCase().replace(/[.\s]+$/, ""), e]),
   );
+  const emotionByStem = buildEmotionStemIndex(emotionRefs);
   /** Resolves "i2: Introvert and insecure." (or bare header text) to its row. */
   function emotionRow(combined: string) {
     if (!combined) return null;
@@ -253,6 +256,9 @@ export async function buildFwmGroups(assessment: AssessmentWithFacts) {
     return (
       (code ? emotionByCode.get(code.trim().toLowerCase()) : undefined) ??
       emotionByHeader.get((label || combined).trim().toLowerCase().replace(/[.\s]+$/, "")) ??
+      // Same last-resort stem match the EmoWave report uses, so the two can't
+      // disagree about which row an emotion resolves to (see stemLabel).
+      emotionByStem.get(stemLabel(label || combined)) ??
       null
     );
   }

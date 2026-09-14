@@ -254,9 +254,24 @@ export function sensoryFallbackCharacter(facts: ReportFact[], key: "Base" | "Nex
 // fallback format their character as "N - Name" (sometimes "3.0 - Winner"
 // with a decimal from PDF extraction) — pull out just the leading number to
 // key CharacterReference lookups, which store a clean integer.
+//
+// The decimal is a WING, not something to round: the vendor writes "6.0 -
+// Loyalist", "3.2 - Winner", "7.5 - Adventurer", and in every case the
+// INTEGER PART is the type. A wing never promotes a client to the next type,
+// not even at exactly .5 — 7.5 is an Adventurer with a Boss wing, not a Boss.
+//
+// Math.round got the sub-.5 wings right by luck and "7.5 - Adventurer" wrong:
+// JS rounds .5 up, so a type 7 client was looked up as type 8 and read back
+// Boss's reference content while every other part of their report said
+// Adventurer. Truncate instead, which matches what the client's own Mind
+// Report prints for them (page 8's "Sensory personality mode: The Adventurer
+// (7.5)", page 15's "Learning personality").
+//
+// parseNinePointsTypes resolves the same wing the same way for the NAME; the
+// two are one rule kept in two places, so change them together.
 export function parseCharacterNumber(label: string): number | null {
   const m = /^(\d+(?:\.\d+)?)/.exec(label.trim());
-  return m ? Math.round(parseFloat(m[1])) : null;
+  return m ? Math.floor(parseFloat(m[1])) : null;
 }
 
 // AttributeCodeReference.header and the client's own extracted attribute
@@ -271,6 +286,40 @@ export function normalizeAttrLabel(s: string): string {
     .toLowerCase()
     .replace(/^(a|an)\s+/i, "")
     .replace(/[.\s]+$/, "");
+}
+
+// The vendor's two report families word the SAME emotion slightly
+// differently: the Mind Report prints "Extrovert and self-confident." where
+// the reference workbook's row e1 says "Extroverted and self-confident.".
+// normalizeAttrLabel only folds case, articles and trailing punctuation, so
+// that pair misses — and a missed lookup silently drops the canonical
+// `explanation` in favour of Gemini text, which is how a client's Core
+// emotion printed AI prose while the Frequent one (whose wording happens to
+// match exactly) printed the real reference copy.
+//
+// Collapsing each word to a crude stem folds that ending drift away. It is
+// deliberately blunt — "and" becomes "an" — which is harmless because BOTH
+// sides go through it, but it means a stem is not proof of identity. So this
+// is only ever the LAST resort, after code and exact-header matching, and
+// callers must reject a stem shared by more than one row (see
+// buildEmotionStemIndex) rather than attach some other emotion's text.
+export function stemLabel(s: string): string {
+  return normalizeAttrLabel(s)
+    .split(/\s+/)
+    .map((w) => w.replace(/(ed|es|s|d)$/, ""))
+    .join(" ");
+}
+
+// Stem -> row, with ambiguous stems mapped to null so a lookup that lands on
+// one falls through instead of guessing between the rows that share it.
+export function buildEmotionStemIndex<T extends { header: string | null }>(rows: T[]): Map<string, T | null> {
+  const index = new Map<string, T | null>();
+  for (const row of rows) {
+    if (!row.header) continue;
+    const key = stemLabel(row.header);
+    index.set(key, index.has(key) ? null : row);
+  }
+  return index;
 }
 
 /**
@@ -448,6 +497,18 @@ const THEME_SECTIONS: Record<ReportTheme, string[]> = {
 // own combined line. The three ALL-CAPS words after each character number are
 // that type's communication/learning style (sense modality, direction,
 // orientation), which the overview shows as the base/next attribute lists.
+//
+// A half-type is written as a hyphenated PAIR — "[Chort] THE ADVENTURER - THE
+// BOSS (7.5) VISUAL FOCUSED EXTROVERT A-Minor (Am)" — because 7.5 sits between
+// Adventurer (7) and Boss (8). The old name pattern ended at "\(", and since
+// its character class has no hyphen it could not match across "ADVENTURER -
+// THE BOSS"; it backtracked, re-anchored on the SECOND "THE", and returned the
+// upper half ("Boss") as the client's character. Stopping at the hyphen as
+// well as the paren keeps the match on the first name, which is also the one
+// the Mind Report's own page-8 "Sensory personality mode" line prints ("The
+// Adventurer (7.5)") and the one Math.floor keys the reference lookup to, so
+// the name on the chip and the description under it are the same character.
+// See parseCharacterNumber's note — the two are one rule, kept in two places.
 export function parseNinePointsTypes(summary: string): { character: string; attrs: string[] }[] {
   if (!summary) return [];
   const titleCase = (s: string) => s.charAt(0) + s.slice(1).toLowerCase();
@@ -456,7 +517,7 @@ export function parseNinePointsTypes(summary: string): { character: string; attr
     .map((s) => s.trim())
     .filter(Boolean)
     .map((chunk) => {
-      const nameMatch = /THE\s+([A-Z][A-Z ]*?)\s*\(/.exec(chunk);
+      const nameMatch = /THE\s+([A-Z][A-Z ]*?)\s*(?:[-–—]|\()/.exec(chunk);
       const attrsMatch = /\([\d.]+\)\s+((?:[A-Z]+\s+){2}[A-Z]+)/.exec(chunk);
       return {
         character: nameMatch ? titleCase(nameMatch[1].trim()) : "",
@@ -623,12 +684,18 @@ export async function renderEwFullReportHtml(
   // deliberately doesn't reprint verbatim.
   const emotionByCode = new Map(emotionRefs.map((e) => [e.code.trim().toLowerCase(), e]));
   const emotionByHeader = new Map(emotionRefs.filter((e) => e.header).map((e) => [normalizeAttrLabel(e.header!), e]));
+  const emotionByStem = buildEmotionStemIndex(emotionRefs);
   const emotionExplanationFor = (combined: string): string => {
     if (!combined) return "";
     const { code, label } = splitCodeLabel(combined);
     const row =
       (code ? emotionByCode.get(code.trim().toLowerCase()) : undefined) ??
-      (label ? emotionByHeader.get(normalizeAttrLabel(label)) : undefined);
+      (label ? emotionByHeader.get(normalizeAttrLabel(label)) : undefined) ??
+      // Last resort — tolerates the Mind Report's wording drift from the
+      // workbook ("Extrovert" vs "Extroverted"). Yields null for a stem more
+      // than one row shares, which falls through to Gemini content rather
+      // than printing a different emotion's explanation.
+      (label ? (emotionByStem.get(stemLabel(label)) ?? undefined) : undefined);
     return row?.explanation?.trim() || "";
   };
 
