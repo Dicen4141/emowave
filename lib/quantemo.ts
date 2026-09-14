@@ -171,20 +171,42 @@ export type QuantemoAccess = {
  * not an alternative to it — reading only `role` (as this did originally)
  * cannot tell a super admin apart from an ordinary admin.
  */
-export async function lookupQuantemoAccess(email: string): Promise<QuantemoAccess | null> {
+/**
+ * Whether Quantemo actually answered, kept SEPARATE from what it said.
+ *
+ * A bare `QuantemoAccess | null` collapsed "Quantemo has no row for this
+ * person" together with "Quantemo could not be reached", which are not the
+ * same claim. syncRole only ever grants, so today neither one costs anybody
+ * access — but the distinction is what makes it safe to read this without
+ * re-checking that assumption, and it keeps a genuine outage out of the logs'
+ * "not an admin" bucket.
+ */
+export type QuantemoAccessResult =
+  /** Quantemo answered. `access` is null when it holds no row for this email. */
+  | { ok: true; access: QuantemoAccess | null }
+  /** Quantemo could not be asked — says nothing about the person either way. */
+  | { ok: false; access: null };
+
+export async function lookupQuantemoAccess(email: string): Promise<QuantemoAccessResult> {
   const client = quantemoClient();
-  if (!client || !email) return null;
+  if (!client || !email) return { ok: false, access: null };
   try {
     const { data, error } = await client
       .from("users")
       .select("role, is_super_admin")
       .eq("email", email)
       .maybeSingle();
-    if (error || !data) return null;
+    // An error is a failure to ask; no row is a real answer ("not a Quantemo
+    // user"). Only the second one should ever cost somebody their access.
+    if (error) {
+      console.error("Quantemo role lookup failed:", error.message);
+      return { ok: false, access: null };
+    }
+    if (!data) return { ok: true, access: null };
     const row = data as { role: string | null; is_super_admin: boolean | null };
-    return { role: row.role, isSuperAdmin: row.is_super_admin === true };
+    return { ok: true, access: { role: row.role, isSuperAdmin: row.is_super_admin === true } };
   } catch (err) {
     console.error("Quantemo role lookup failed:", err);
-    return null;
+    return { ok: false, access: null };
   }
 }
