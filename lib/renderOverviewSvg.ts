@@ -419,6 +419,30 @@ const TOP5_COLS = [48, 395];
 // panel and read as a warning box.
 const TOP5_COLORS = ["#157a4a", "#b02a1f"];
 
+// The bullet for each top-5 item, drawn as geometry rather than as the
+// character "◆".
+//
+// Every <text> in this file asks for 'Segoe UI', Arial, sans-serif. The PDF is
+// rendered by headless Chrome in a Linux container where neither of those
+// fonts is installed, so the stack falls through to whatever sans-serif the
+// image happens to ship — and that substitute has no glyph at U+25C6, which
+// printed every bullet in both top-5 columns as a missing-glyph box. Latin
+// text survives the substitution; a decorative symbol is a coin flip.
+//
+// A <path> has no font dependency, so it renders identically everywhere. This
+// is the same reason markDiamond and the Lifepath blueprint's own markers are
+// already drawn as paths, and the rule worth keeping: shapes as geometry,
+// fonts for words only.
+function bulletDiamond(x: number, baseline: number, color: string): string {
+  // Sized and positioned to sit where the 11px glyph used to: centred on the
+  // first line's optical middle rather than on its baseline, so it stays
+  // aligned against an item that wraps to two lines.
+  const r = 4.5;
+  const cx = x + r;
+  const cy = baseline - r;
+  return `<path d="M${cx},${cy - r} L${cx + r},${cy} L${cx},${cy + r} L${cx - r},${cy} Z" fill="${color}" />`;
+}
+
 function renderTopFiveLists(constructive: string[], restrictive: string[]): string[] {
   const cols = [constructive.slice(0, 5), restrictive.slice(0, 5)];
   const rowCount = Math.max(...cols.map((c) => c.length));
@@ -445,11 +469,8 @@ function renderTopFiveLists(constructive: string[], restrictive: string[]): stri
     wrapped.forEach((col, c) => {
       if (!col[i].length) return;
       const x = TOP5_COLS[c];
-      // ◆ renders noticeably larger than a square/round bullet at the same
-      // size, so it runs a couple of points smaller to keep the same weight
-      // against the 15px item text.
       const color = TOP5_COLORS[c];
-      out.push(tspanBlock(x, y, ["◆"], 0, 11, color, 700));
+      out.push(bulletDiamond(x, y, color));
       out.push(tspanBlock(x + TOP5_BULLET_GAP, y, col[i], TOP5_LINE_H, 15, color));
     });
     y += lines * TOP5_LINE_H + gap;
