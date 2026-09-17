@@ -1449,6 +1449,31 @@ textarea.note-input {
   font-size: 16px;
 }
 
+/* Confirmation prompts. Narrower than a working modal because they carry two
+   sentences and two buttons, and a 640px box around that much text reads as
+   though something has gone wrong rather than as a question. */
+.modal-confirm {
+  width: min(440px, 100%);
+}
+
+.confirm-body {
+  margin: 0 0 10px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.confirm-body:last-of-type {
+  margin-bottom: 0;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 18px;
+}
+
 /* ============================================================
    Scrollbar
    ============================================================ */

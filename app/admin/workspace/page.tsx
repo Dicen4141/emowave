@@ -254,6 +254,62 @@ function WorkspaceView() {
   const [newClientError, setNewClientError] = useState("");
 
   const [showExtractModal, setShowExtractModal] = useState(false);
+
+  // In-app replacement for window.confirm(). The native dialog is rendered by
+  // the browser chrome, so it shows the raw deployment hostname
+  // ("emowave-....ondigitalocean.app says"), ignores the app's styling, and
+  // gives no room to mark a destructive choice as destructive — all of which
+  // matter here, because these prompts are the last thing standing between a
+  // staff member and an irreversible action (replacing a customer's delivered
+  // report, deleting real extracted facts).
+  //
+  // Promise-based so the call sites read exactly as they did before —
+  // `if (!(await askConfirm({...}))) return;` in place of `if (!confirm(...))
+  // return;` — rather than being rewritten into callbacks.
+  type ConfirmRequest = {
+    title: string;
+    body: string[];
+    confirmLabel: string;
+    tone: "default" | "danger";
+    resolve: (ok: boolean) => void;
+  };
+  const [confirmRequest, setConfirmRequest] = useState<ConfirmRequest | null>(null);
+  const askConfirm = (opts: { title: string; body: string; confirmLabel?: string; tone?: "default" | "danger" }) =>
+    new Promise<boolean>((resolve) => {
+      setConfirmRequest({
+        title: opts.title,
+        // Blank-line-separated paragraphs, the same shape these messages
+        // already used for the native dialog.
+        body: opts.body
+          .split("\n\n")
+          .map((para) => para.trim())
+          .filter(Boolean),
+        confirmLabel: opts.confirmLabel ?? "Confirm",
+        tone: opts.tone ?? "default",
+        resolve,
+      });
+    });
+  // Resolve outside the state updater: an updater can run twice under React
+  // StrictMode, and resolving a promise twice would silently drop the second
+  // answer.
+  const closeConfirm = (ok: boolean) => {
+    if (!confirmRequest) return;
+    confirmRequest.resolve(ok);
+    setConfirmRequest(null);
+  };
+  // Escape cancels, matching what the native dialog did. Bound only while a
+  // prompt is open so it can't swallow Escape from anything else on the page.
+  useEffect(() => {
+    if (!confirmRequest) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        confirmRequest.resolve(false);
+        setConfirmRequest(null);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [confirmRequest]);
   // "pdf" gets a Download button (a real file); "page" is a live HTML view
   // "pdf" iframes a generated PDF (has a Download button). "mindmap" renders
   // the MindMapView component directly instead of iframing the standalone
@@ -700,18 +756,29 @@ function WorkspaceView() {
     const sourceRound = assessments.find((a) => a.id === copyFrom);
     if (
       copyFromIsOtherClient &&
-      !confirm(
-        `"${sourceRound?.customerId ?? "That round"}" is a different client from "${selected?.customerId ?? "this one"}".\n\n` +
+      !(await askConfirm({
+        title: "Copy data from a different client?",
+        body:
+          `"${sourceRound?.customerId ?? "That round"}" is a different client from "${selected?.customerId ?? "this one"}".\n\n` +
           "Their assessment data will be filed under this person and will look extracted, not borrowed — " +
-          "including to the chat, to every report, and to automatic delivery.\n\nCopy anyway?",
-      )
+          "including to the chat, to every report, and to automatic delivery.",
+        confirmLabel: "Copy anyway",
+        tone: "danger",
+      }))
     )
       return;
     // Replacing destroys real extracted facts, which no upload brings back
     // without re-running extraction on the original PDFs.
     if (
       sources.length > 0 &&
-      !confirm(`This round already has ${sources.reduce((n, s) => n + s.fieldCount, 0)} fields. Delete them and replace with the copy?`)
+      !(await askConfirm({
+        title: "Replace this round's extracted data?",
+        body:
+          `This round already has ${sources.reduce((n, s) => n + s.fieldCount, 0)} fields. They will be deleted and replaced with the copy.\n\n` +
+          "No upload brings them back without re-running extraction on the original PDFs.",
+        confirmLabel: "Delete and replace",
+        tone: "danger",
+      }))
     )
       return;
 
@@ -849,16 +916,27 @@ function WorkspaceView() {
     // Already sent is refused server-side; asking here turns that refusal
     // into a decision rather than an error the staff member has to interpret.
     const resend = deliveredSlugs.has(slug);
-    if (resend && !confirm("This report has already been sent to the customer. Send it again and replace their copy?")) return;
+    if (
+      resend &&
+      !(await askConfirm({
+        title: "Send this report again?",
+        body: "This report has already been sent to the customer. Sending it again replaces the copy they have.",
+        confirmLabel: "Send again",
+        tone: "danger",
+      }))
+    )
+      return;
     // Sending an unpurchased report isn't blocked — staff legitimately send
     // goodwill copies and fix mis-ordered products — but it shouldn't happen
     // by accident from having the wrong preview open.
     if (
       purchases.length > 0 &&
       !purchases.some((p) => p.slug === slug) &&
-      !confirm(
-        `This customer bought ${purchases.map((p) => REPORT_LABELS[p.slug] ?? p.slug).join(", ")}, not ${REPORT_LABELS[slug] ?? slug}. Send it anyway?`,
-      )
+      !(await askConfirm({
+        title: "Send a report they didn't buy?",
+        body: `This customer bought ${purchases.map((p) => REPORT_LABELS[p.slug] ?? p.slug).join(", ")}, not ${REPORT_LABELS[slug] ?? slug}.`,
+        confirmLabel: "Send anyway",
+      }))
     )
       return;
     setDelivering(true);
@@ -1272,6 +1350,41 @@ function WorkspaceView() {
               {creatingClient ? "Creating…" : "Create client"}
             </button>
           </form>
+        </div>
+      )}
+
+      {confirmRequest && (
+        <div className="modal-overlay" onClick={() => closeConfirm(false)} role="presentation">
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="card modal modal-confirm"
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="confirm-title"
+          >
+            <div className="modal-head">
+              <h3 id="confirm-title">{confirmRequest.title}</h3>
+            </div>
+            {confirmRequest.body.map((para, i) => (
+              <p key={i} className="confirm-body">
+                {para}
+              </p>
+            ))}
+            <div className="modal-actions">
+              <button className="btn-secondary" onClick={() => closeConfirm(false)}>
+                Cancel
+              </button>
+              {/* Focused on open so Enter confirms and Escape cancels, the way
+                  the native dialog behaved. */}
+              <button
+                className={confirmRequest.tone === "danger" ? "btn-danger" : undefined}
+                onClick={() => closeConfirm(true)}
+                autoFocus
+              >
+                {confirmRequest.confirmLabel}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
