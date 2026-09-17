@@ -671,7 +671,15 @@ export async function renderEwFullReportHtml(
     prisma.emotionCodeReference.findMany(),
   ]);
   const attrByNormalizedHeader = new Map(attributeRefs.filter((a) => a.header).map((a) => [normalizeAttrLabel(a.header!), a]));
-  const attrDescFor = (label: string, fallbackDesc: string): string => attrByNormalizedHeader.get(normalizeAttrLabel(label))?.description || fallbackDesc;
+  // The vendor's attribute table describes only some of its rows. For an
+  // undescribed one the stored fallback is the attribute's OWN NAME, so this
+  // printed the same sentence in both cells of the row. An echo is not a
+  // description: leave the cell empty and let the label stand alone. Same
+  // decision as renderFwmReport's bodyOptional blocks.
+  const attrDescFor = (label: string, fallbackDesc: string): string => {
+    const desc = (attrByNormalizedHeader.get(normalizeAttrLabel(label))?.description || fallbackDesc || "").trim();
+    return normalizeAttrLabel(desc) === normalizeAttrLabel(label) ? "" : desc;
+  };
   constructive = constructive.map((c) => ({ ...c, desc: attrDescFor(c.label, c.desc) }));
   restrictive = restrictive.map((r) => ({ ...r, desc: attrDescFor(r.label, r.desc) }));
 

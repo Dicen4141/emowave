@@ -119,7 +119,10 @@ function prettySensory(key: string): string {
     .join(" · ");
 }
 
-type Block = { title: string; body: string; source: string; note?: string };
+// bodyOptional marks a block whose source legitimately has nothing to say for
+// it, as opposed to one whose content failed to arrive. The distinction is what
+// keeps "Not included in this report." meaningful: see blockHtml.
+type Block = { title: string; body: string; source: string; note?: string; bodyOptional?: boolean };
 type Group = { title: string; blurb: string; blocks: Block[] };
 
 // Above this many characters a block is treated as long-form copy that may
@@ -133,6 +136,18 @@ function blockHtml(b: Block): string {
   // this block; repeating it as an <h4> prints the same words twice.
   const heading = b.title ? `<h4>${escapeHtml(b.title)}</h4>` : "";
   if (!b.body.trim()) {
+    // A block that is ALLOWED to have no body prints as its title alone. The
+    // vendor's attribute table describes only 97 of its 134 entries, and the
+    // undescribed ones are not missing data — there is simply nothing more to
+    // say about them. Flagging those as a gap would put "Not included in this
+    // report." under a third of a client's attributes and would train staff to
+    // read the real gap message as noise.
+    if (b.bodyOptional) {
+      return `<div class="fwm-block">
+      ${heading}
+      <div class="fwm-src">${escapeHtml(b.source)}</div>
+    </div>`;
+    }
     return `<div class="fwm-block fwm-gap">
       ${heading}
       <p class="fwm-gap-msg">Not included in this report.</p>
@@ -463,7 +478,14 @@ export async function buildFwmGroups(assessment: AssessmentWithFacts) {
     }
     return rows.slice(0, 5).map((r) => {
       const ref = attrByNormalizedHeader.get(normalizeAttrLabel(r.label));
-      return { label: asStatement(ref?.header || r.label), desc: ref?.description || r.desc };
+      const label = asStatement(ref?.header || r.label);
+      // No description anywhere means the block prints as a title on its own.
+      // The stored fallback for an undescribed attribute is the attribute's
+      // OWN NAME, so using it unconditionally printed every such item twice —
+      // once as the heading and again as its body. An echo is not a
+      // description; blank it and let blockHtml render the title alone.
+      const desc = (ref?.description ?? r.desc ?? "").trim();
+      return { label, desc: normalizeAttrLabel(desc) === normalizeAttrLabel(label) ? "" : desc };
     });
   }
 
@@ -478,7 +500,7 @@ export async function buildFwmGroups(assessment: AssessmentWithFacts) {
       title,
       blurb,
       blocks: rows.length
-        ? rows.map((r, i) => ({ title: `${i + 1}. ${r.label}`, body: r.desc, source: S_ATTR }))
+        ? rows.map((r, i) => ({ title: `${i + 1}. ${r.label}`, body: r.desc, source: S_ATTR, bodyOptional: true }))
         : // One gap block rather than five: the whole list is missing together
           // or not at all, and five identical "Not included" rules is noise.
           [{ title, body: "", source: "No top-5 attributes extracted for this client" }],
