@@ -102,10 +102,37 @@ export function reportSlugForSku(sku: string | null): string {
   return (sku && REPORT_SLUG_BY_SKU[sku.trim().toUpperCase()]) || "overview";
 }
 
+/**
+ * Whether a Quantemo product is one of EmoWave's report products.
+ *
+ * Keyed on SKU, deliberately NOT on the store's `collection` field. Both the
+ * webhook and the pull-sync used to require collection === "EmoWave"; Quantemo
+ * renamed that collection to "Report", and since a rename there needs no
+ * deploy here, every EmoWave order silently stopped reaching EmoSpace while
+ * looking like a normal paid sale in the store. Worse, the two paths failed
+ * differently — the webhook refused each order one at a time, and the
+ * lister matched no products at all and returned an empty list, so the Clients
+ * page simply showed nothing rather than showing something wrong. A display
+ * label was load-bearing, which it should never have been.
+ *
+ * SKU is the durable key: it is what REPORT_SLUG_BY_SKU already maps to a
+ * report, so "a product we recognise" and "a product we can deliver" stay the
+ * same question. The EMOWAVE- prefix admits a new report product added to the
+ * store before it is added here; everything else in the catalogue (EMOPILL,
+ * EBOOK-BRAINWAVE, SVC-*, DC-TOPUP) is still refused.
+ *
+ * Both call sites use this. If a third appears, it uses this too — the bug
+ * above was two copies of one rule drifting out of step with the store.
+ */
+export function isEmoWaveSku(sku: string | null): boolean {
+  const normalized = sku?.trim().toUpperCase() ?? "";
+  return normalized in REPORT_SLUG_BY_SKU || normalized.startsWith("EMOWAVE-");
+}
+
 export type ProcessOrderResult = { ok: true; assessmentId: string; created: boolean } | { ok: false; reason: string };
 
 /**
- * Turns one paid, EmoWave-collection Quantemo order into an EmoWave
+ * Turns one paid EmoWave Quantemo order into an EmoWave
  * Client + Assessment (a "round"), or finds the one that already exists for
  * it. Idempotent on Assessment.quantemoOrderId — safe to call twice for the
  * same order (webhook redelivery, or someone clicking "Add to EmoSpace"
@@ -118,10 +145,13 @@ export async function processQuantemoOrder(order: QuantemoOrder): Promise<Proces
 
   const { data: product } = await quantemo.from("products").select("collection, sku").eq("id", order.product_id).maybeSingle();
   const productRow = product as { collection: string | null; sku: string | null } | null;
-  if (productRow?.collection !== "EmoWave") {
-    return { ok: false, reason: "not an EmoWave product" };
+  if (!isEmoWaveSku(productRow?.sku ?? null)) {
+    // Naming both values: the next time this refuses an order someone expected
+    // to see, the reason says which field actually disqualified it, rather than
+    // leaving them to guess the way the collection rename did.
+    return { ok: false, reason: `not an EmoWave product (sku "${productRow?.sku ?? "none"}", collection "${productRow?.collection ?? "none"}")` };
   }
-  const slug = reportSlugForSku(productRow.sku);
+  const slug = reportSlugForSku(productRow?.sku ?? null);
 
   // Idempotent on the purchase, not on the round: the same order must never
   // be recorded twice, but a DIFFERENT order for the same person is a real
@@ -301,8 +331,13 @@ export type EmowaveBuyerSummary = {
 export async function listRecentEmowaveOrders(limit = 200): Promise<EmowaveBuyerSummary[]> {
   const quantemo = quantemoClient();
 
-  const { data: emowaveProducts } = await quantemo.from("products").select("id").eq("collection", "EmoWave");
-  const productIds = (emowaveProducts ?? []).map((p) => (p as { id: number }).id);
+  // Filtered here rather than in the query so both paths share isEmoWaveSku
+  // instead of expressing the same rule twice. The catalogue is small enough
+  // that reading it whole costs nothing.
+  const { data: allProducts } = await quantemo.from("products").select("id, sku");
+  const productIds = ((allProducts ?? []) as { id: number; sku: string | null }[])
+    .filter((p) => isEmoWaveSku(p.sku))
+    .map((p) => p.id);
   if (productIds.length === 0) return [];
 
   const { data: orders } = await quantemo
