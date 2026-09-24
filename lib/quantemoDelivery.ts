@@ -49,6 +49,10 @@ type QuantemoDb = {
           tier: string;
           variant: string;
           payload: unknown;
+          // Quantemo's own name for the product that was bought ("EmoWave
+          // Report", "Financial Wealth Management Report"). Read off the
+          // placeholder row and copied onto the delivered one.
+          product_name: string | null;
         };
         Insert: {
           user_id: number;
@@ -60,6 +64,10 @@ type QuantemoDb = {
           // Optional both ways: the column doesn't exist on Quantemo yet, and
           // a report bought for oneself has no family profile to point at.
           subject_profile_id?: number | null;
+          // Omitted rather than nulled when the placeholder carries no name —
+          // writing null would overwrite nothing useful, but it would also
+          // make a missing name indistinguishable from a deliberate blank.
+          product_name?: string | null;
         };
         Update: { payload?: unknown };
         Relationships: [];
@@ -217,6 +225,24 @@ export async function deliverReportToQuantemo(
     .eq("payload->>slug", slug)
     .maybeSingle();
 
+  // Quantemo writes a PLACEHOLDER row at purchase (payload null) and hides it
+  // once a sibling with the same order_id carries a pdf_path. That row is the
+  // authority on what was actually bought — its tier, variant and
+  // product_name come from the product the customer paid for. Copy them onto
+  // the delivered row rather than restating them as constants here: the
+  // constants below say "tier0"/"full" for every report, so a customer who
+  // bought the Financial or Career report got a row labelled as the full one,
+  // and any future product with a different tier would be mislabelled the
+  // moment it was sold. Never updated or deleted, only read.
+  const { data: placeholder } = await quantemo
+    .from("reports")
+    .select("tier, variant, product_name")
+    .eq("order_id", order.id)
+    .is("payload", null)
+    .limit(1)
+    .maybeSingle();
+  const placeholderRow = placeholder as { tier: string | null; variant: string | null; product_name: string | null } | null;
+
   // The knowledge base Quantemo's own report chat answers from, plus the
   // rules it must answer under. Both ride in `payload` beside the PDF rather
   // than in new columns, for the same reason pdf_path does: no migration on
@@ -287,8 +313,11 @@ export async function deliverReportToQuantemo(
     user_id: order.buyer_id,
     product_id: order.product_id,
     order_id: order.id,
-    tier: QUANTEMO_TIER,
-    variant: QUANTEMO_VARIANT,
+    // Placeholder first, constants only as the fallback for an order that has
+    // no placeholder (a legacy row, or a delivery that ran before Quantemo
+    // created one).
+    tier: placeholderRow?.tier ?? QUANTEMO_TIER,
+    variant: placeholderRow?.variant ?? QUANTEMO_VARIANT,
     payload,
   };
 
@@ -298,11 +327,17 @@ export async function deliverReportToQuantemo(
     ({ error: rowError } = await quantemo.from("reports").update({ payload }).eq("id", existingId));
   } else {
     const withSubject = subjectProfileId !== null && !subjectColumnMissing;
-    const row: ReportInsert = withSubject ? { ...baseRow, subject_profile_id: subjectProfileId } : baseRow;
+    // product_name rides along when the placeholder had one, so the delivered
+    // row names the product the customer bought instead of leaving Quantemo to
+    // infer it. Dropped silently when absent rather than written as null.
+    const named: ReportInsert = placeholderRow?.product_name
+      ? { ...baseRow, product_name: placeholderRow.product_name }
+      : baseRow;
+    const row: ReportInsert = withSubject ? { ...named, subject_profile_id: subjectProfileId } : named;
     ({ error: rowError } = await quantemo.from("reports").insert(row));
     if (rowError && withSubject && isUnknownColumn(rowError, "subject_profile_id")) {
       subjectColumnMissing = true;
-      ({ error: rowError } = await quantemo.from("reports").insert(baseRow));
+      ({ error: rowError } = await quantemo.from("reports").insert(named));
     }
   }
   if (rowError) return { ok: false, reason: `Couldn't write the Quantemo reports row: ${rowError.message}` };
