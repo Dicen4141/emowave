@@ -877,12 +877,18 @@ function WorkspaceView() {
 
   // theme wins over variant: "career"/"relationship" are themed EmoWave
   // reports, and each is its own deliverable rather than a flavour of "full".
+  // These are the Quantemo store's own product names, verbatim (products.name
+  // for each EMOWAVE- SKU). Staff read these in purchase and delivery messages
+  // ("bought X, not Y"), so they have to be the words the CUSTOMER saw at
+  // checkout — a staff-invented shorthand turns every such message into a
+  // translation exercise. "Full Report" has no store entry: it is not sold
+  // separately, only rendered.
   const REPORT_LABELS: Record<string, string> = {
-    overview: "EmoWave Overview",
+    overview: "EmoWave Report",
     full: "Full Report",
-    fwm: "Financial",
-    career: "Career",
-    relationship: "Relationship",
+    fwm: "Financial Wealth Management Report",
+    career: "EmoWave Career",
+    relationship: "EmoWave Relationship",
   };
 
   /**
@@ -1252,12 +1258,21 @@ function WorkspaceView() {
                     openReportPreview(`/api/generate-report?assessmentId=${selectedId}&variant=overview`, "EmoWave Overview (1 page)")
                   }
                 />
-                {/* Full Report is hidden from the Studio. Only this tile is
-                    gone — /api/generate-report with no variant/theme still
-                    renders it, and the themed tiles below depend on that same
-                    endpoint, so nothing here is dead code. Restore by putting
-                    the tile back:
-                    <ToolTile id="full" label="Full Report" onClick={() => openReportPreview(`/api/generate-report?assessmentId=${selectedId}`, "Full Report")} /> */}
+                {/* The complete report: every section, numbered. The themed
+                    tiles below hit this same endpoint with ?theme=, which
+                    keeps a SUBSET — Career shows 4 of the 9 sections and
+                    Relationship 4, so neither is a substitute for this one.
+                    Not a Quantemo product, so it carries a state only once it
+                    has actually been sent (see the tile itself). */}
+                <ToolTile
+                  id="full"
+                  label="Full Report"
+                  // "none" would dim this as "not purchased", which is
+                  // misleading for a report that cannot be purchased at all.
+                  // Undefined leaves it neutral; a real delivery still shows.
+                  state={tileState("full") === "none" ? undefined : tileState("full")}
+                  onClick={() => openReportPreview(`/api/generate-report?assessmentId=${selectedId}`, "EmoWave Full Report")}
+                />
                 {THEMES.map((t) => (
                   <ToolTile
                     key={t.value}
@@ -1282,7 +1297,12 @@ function WorkspaceView() {
                   }
                 />
                 <ToolTile id="mind-map" label={studioTool("mind-map")?.label ?? "Mind Map"} onClick={() => openConfigure("mind-map")} />
-                <ToolTile id="infographic" label={studioTool("infographic")?.label ?? "Infographic"} onClick={() => openConfigure("infographic")} />
+                {/* Infographic is hidden from the Studio, the way Full Report
+                    used to be. Only the tile is gone — the kind, its icon,
+                    its tint and its studioOptions entry all remain, and
+                    /studio/infographic/<assessmentId> still renders, so
+                    nothing here is dead code. Restore by putting the tile back:
+                    <ToolTile id="infographic" label={studioTool("infographic")?.label ?? "Infographic"} onClick={() => openConfigure("infographic")} /> */}
               </div>
 
               <a href="/admin/facts" className="studio-link">
