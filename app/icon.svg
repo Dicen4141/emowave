@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="5.4 4.9 36 36" fill="none" role="img">
+  <title>Quantemo AI</title>
+  <defs>
+    <linearGradient id="qCore" x1="16" y1="14" x2="34" y2="34" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#c084fc" />
+      <stop offset="1" stop-color="#7c3aed" />
+    </linearGradient>
+    <linearGradient id="qTail" x1="26" y1="26" x2="36" y2="37" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#a855f7" />
+      <stop offset="1" stop-color="#e64bc5" />
+    </linearGradient>
+  </defs>
+
+  <!-- No app tile: the mark sits on transparency, so the tile rect and the
+       gradient that filled it are both gone.
+
+       The viewBox is re-cropped to the glyph's own bounds (x 8.95 to 37.9,
+       y 7.95 to 37.9) plus roughly 8% margin, instead of the 48 unit square
+       that only existed to frame the tile. Without re-cropping, removing the
+       tile would leave the mark floating small in the middle of the tab.
+
+       The optical nudge is gone with the tile too: there is no longer a tile
+       centre to sit inside, and the viewBox is cropped to the glyph itself,
+       so the mark is centred by construction. -->
+
+  <!-- Orbit ring — the "O" -->
+  <circle cx="23.5" cy="22.5" r="12.4" stroke="#f5f2fb" stroke-width="4.3" fill="none" />
+
+  <!-- Purple nucleus — the counter of the Q -->
+  <circle cx="23.5" cy="22" r="7.6" fill="url(#qCore)" />
+
+  <!-- Q tail: neck swelling out to the magenta electron -->
+  <path d="M26 26.5 L33.5 34" stroke="url(#qTail)" stroke-width="5.4" stroke-linecap="round" />
+
+  <!-- Orbiting electrons. The twinkle class from the app's LogoIcon is dropped:
+       a favicon gets no stylesheet, so it would never animate anyway. -->
+  <circle cx="34.5" cy="34.5" r="3.4" fill="#e64bc5" />
+  <circle cx="13.4" cy="32.6" r="3.2" fill="#f59e0b" />
+  <circle cx="35" cy="14" r="2.6" fill="#a855f7" />
+</svg>
